@@ -1,0 +1,94 @@
+# SDC Agents Personal — Configuration
+# Copy to sdc-agents.yaml and fill in values.
+# Environment variables can be used with ${VAR_NAME} syntax.
+
+# --- SDCStudio SaaS backend ---
+sdcstudio:
+  base_url: "https://sdcstudio.example.com"
+  api_key: "${SDC_API_KEY}"          # VaaS token (Validation Agent only)
+  default_library_project: "SDC4-Core"  # Default project for contextual components
+
+# --- Local LLM via Ollama ---
+# Any Ollama model with tool-calling support works.
+# Use ollama_chat/ prefix for chat models (recommended).
+# Tested models: gemma4:26b, qwen3.5:32b, llama3.1:8b
+model:
+  default: "ollama_chat/gemma4:26b"
+  ollama_base_url: "http://localhost:11434"
+
+cache:
+  root: ".sdc-cache"
+  ttl_hours: 24
+
+audit:
+  path: ".sdc-cache/audit.jsonl"
+  log_level: "standard"  # "standard" summarizes outputs; "verbose" logs full payloads
+
+datasources:
+  # --- Local files ---
+  patient_csv:
+    type: "csv"
+    path: "/data/exports/patients.csv"
+  nhanes_bp:
+    type: "csv"
+    path: "source_data/nhanes/BPX_J.csv"
+    metadata_path: "source_data/nhanes/BPX_J.meta.json"  # SAS labels + value maps
+  records_json:
+    type: "json"
+    path: "/data/exports/records.json"
+    jsonpath: "$.results[*]"
+
+  # --- SQL databases (any SQLAlchemy-compatible async driver) ---
+  lab_db:
+    type: "sql"
+    connection_string: "${LAB_DB_CONNECTION}"
+
+  # --- MongoDB ---
+  clinical_db:
+    type: "mongodb"
+    connection_string: "${MONGO_CONNECTION}"
+    database: "clinical"
+    collection: "lab_results"
+
+  # --- Cloud data platforms (install the driver, then use type: sql) ---
+  # Snowflake:  pip install snowflake-sqlalchemy
+  # snowflake_warehouse:
+  #   type: "sql"
+  #   connection_string: "snowflake://${SNOWFLAKE_USER}:${SNOWFLAKE_PASSWORD}@${SNOWFLAKE_ACCOUNT}/${SNOWFLAKE_DATABASE}/${SNOWFLAKE_SCHEMA}?warehouse=${SNOWFLAKE_WAREHOUSE}"
+
+# Knowledge sources — customer contextual resources (pip install sdc-agents-personal[knowledge])
+knowledge:
+  vector_store: "chroma"
+  vector_store_path: ".sdc-cache/knowledge/"
+  sources:
+    data_dictionary:
+      type: "markdown"
+      path: "/data/docs/data_dictionary.md"
+    glossary:
+      type: "json"
+      path: "/data/docs/glossary.json"
+    domain_ontology:
+      type: "ttl"
+      path: "/data/ontologies/domain.ttl"
+    # policy_manual:
+    #   type: "pdf"
+    #   path: "./docs/data_governance_policy.pdf"
+    # requirements_doc:
+    #   type: "docx"
+    #   path: "./docs/requirements.docx"
+
+output:
+  directory: "./output"
+  formats:
+    - "xml"
+
+destinations:
+  triplestore:
+    type: "fuseki"
+    endpoint: "${FUSEKI_URL}"
+    auth: "${FUSEKI_AUTH}"
+    upload_method: "named_graph"
+  archive:
+    type: "filesystem"
+    path: "./archive/{ct_id}/{instance_id}/"
+    create_directories: true
