@@ -749,3 +749,69 @@ def pipeline_run(ctx: click.Context, name: str, param: tuple[str, ...]) -> None:
         click.echo("  Errors:")
         for err in result["errors"]:
             click.echo(f"    step {err['step']} ({err['agent']}.{err['tool']}): {err['error']}")
+
+
+# ---------------------------------------------------------------------------
+# compliance
+# ---------------------------------------------------------------------------
+
+
+@main.group()
+def compliance() -> None:
+    """Generate compliance reports from audit and lineage logs."""
+
+
+@compliance.command("report")
+@click.option("--format", "fmt", default="json", type=click.Choice(["json", "markdown", "html"]),
+              help="Output format.")
+@click.option("--last", default=None, metavar="DURATION",
+              help="Include records from duration (e.g., 24h, 7d, 30d).")
+@click.option("--output", "-o", default=None, type=click.Path(),
+              help="Write report to file (default: stdout).")
+@click.pass_context
+def compliance_report(
+    ctx: click.Context,
+    fmt: str,
+    last: str | None,
+    output: str | None,
+) -> None:
+    """Generate a compliance report from audit and lineage logs."""
+    from sdc_agents.common.compliance import ComplianceReporter
+    from sdc_agents.common.config import load_config
+
+    try:
+        config = load_config(ctx.obj["config_path"])
+        audit_path = config.audit.path
+        cache_root = config.cache.root
+    except (FileNotFoundError, KeyError):
+        audit_path = ".sdc-cache/audit.jsonl"
+        cache_root = ".sdc-cache"
+
+    lineage_path = Path(cache_root) / "lineage.jsonl"
+
+    # Parse duration
+    last_hours = None
+    last_days = None
+    if last:
+        try:
+            delta = _parse_duration(last)
+            total_hours = delta.total_seconds() / 3600
+            if total_hours >= 24:
+                last_days = int(total_hours / 24)
+            else:
+                last_hours = int(total_hours)
+        except click.BadParameter as exc:
+            raise click.ClickException(str(exc)) from exc
+
+    reporter = ComplianceReporter(audit_path=audit_path, lineage_path=lineage_path)
+    content = reporter.generate(
+        last_hours=last_hours,
+        last_days=last_days,
+        output_format=fmt,
+    )
+
+    if output:
+        Path(output).write_text(content)
+        click.echo(f"Report written to: {output}")
+    else:
+        click.echo(content)

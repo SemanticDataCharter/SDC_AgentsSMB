@@ -19,6 +19,7 @@ from google.adk.tools.base_toolset import BaseToolset
 from sdc_agents.common.audit import AuditLogger
 from sdc_agents.common.cache import CacheManager
 from sdc_agents.common.config import SDCAgentsConfig
+from sdc_agents.common.lineage import LineageLogger
 
 
 class GeneratorToolset(BaseToolset):
@@ -34,6 +35,7 @@ class GeneratorToolset(BaseToolset):
         self._cache = CacheManager(config.cache.root)
         self._cache.ensure_dirs()
         self._audit = AuditLogger(config.audit.path, config.audit.log_level)
+        self._lineage = LineageLogger(Path(config.cache.root) / "lineage.jsonl")
         self._output_dir = Path(config.output.directory)
         self._output_dir.mkdir(parents=True, exist_ok=True)
 
@@ -263,6 +265,21 @@ class GeneratorToolset(BaseToolset):
             outputs=result,
             start_time=start,
         )
+
+        # Log lineage
+        self._lineage.log_step(
+            step="generate",
+            agent="generator",
+            tool="generate_instance",
+            input_artifacts=[
+                str(self._cache.mapping_path(mapping_name)),
+                str(self._cache.skeleton_path(ct_id)),
+            ],
+            output_artifacts=[str(output_path)],
+            datasource=mapping_config.get("datasource", ""),
+            row_index=idx,
+        )
+
         return result
 
     async def generate_batch(

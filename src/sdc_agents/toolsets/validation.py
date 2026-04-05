@@ -18,6 +18,7 @@ from sdc_agents.common.audit import AuditLogger
 from sdc_agents.common.cache import CacheManager
 from sdc_agents.common.config import SDCAgentsConfig
 from sdc_agents.common.exceptions import InsufficientFundsError
+from sdc_agents.common.lineage import LineageLogger
 
 
 class ValidationToolset(BaseToolset):
@@ -40,6 +41,7 @@ class ValidationToolset(BaseToolset):
         self._cache = CacheManager(config.cache.root)
         self._cache.ensure_dirs()
         self._audit = AuditLogger(config.audit.path, config.audit.log_level)
+        self._lineage = LineageLogger(Path(config.cache.root) / "lineage.jsonl")
         self._output_dir = Path(config.output.directory).resolve()
         self._output_dir.mkdir(parents=True, exist_ok=True)
 
@@ -193,6 +195,21 @@ class ValidationToolset(BaseToolset):
             outputs=result,
             start_time=start,
         )
+
+        # Log lineage
+        output_artifacts = [xml_path]
+        if "recovered_path" in result:
+            output_artifacts.append(result["recovered_path"])
+        if "package_path" in result:
+            output_artifacts.append(result["package_path"])
+        self._lineage.log_step(
+            step="validate",
+            agent="validation",
+            tool="validate_instance",
+            input_artifacts=[xml_path],
+            output_artifacts=output_artifacts,
+        )
+
         return result
 
     async def sign_instance(

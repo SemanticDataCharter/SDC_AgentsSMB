@@ -21,6 +21,7 @@ from google.adk.tools.base_toolset import BaseToolset
 from sdc_agents.common.audit import AuditLogger
 from sdc_agents.common.cache import CacheManager
 from sdc_agents.common.config import SDCAgentsConfig
+from sdc_agents.common.lineage import LineageLogger
 
 
 class DistributionToolset(BaseToolset):
@@ -42,6 +43,7 @@ class DistributionToolset(BaseToolset):
         self._cache = CacheManager(config.cache.root)
         self._cache.ensure_dirs()
         self._audit = AuditLogger(config.audit.path, config.audit.log_level)
+        self._lineage = LineageLogger(Path(config.cache.root) / "lineage.jsonl")
         self._output_dir = Path(config.output.directory).resolve()
         self._output_dir.mkdir(parents=True, exist_ok=True)
 
@@ -423,6 +425,19 @@ class DistributionToolset(BaseToolset):
             outputs=result,
             start_time=start,
         )
+
+        # Log lineage — package distributed to destinations
+        dest_names = [
+            r["destination"] for r in per_artifact_results if r["status"] == "delivered"
+        ]
+        self._lineage.log_step(
+            step="distribute",
+            agent="distribution",
+            tool="distribute_package",
+            input_artifacts=[package_path],
+            output_artifacts=dest_names,
+        )
+
         return result
 
     async def distribute_batch(self, package_dir: Optional[str] = None) -> dict:
