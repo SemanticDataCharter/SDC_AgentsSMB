@@ -1,0 +1,22 @@
+name: "Google Sheets Financial Data to SDC4"
+description: "Introspect a Google Sheets spreadsheet, discover matching catalog components, validate and distribute artifacts. Requires: pip install sdc-agents-smb[sheets]"
+parameters:
+  - name: datasource
+    description: "Name of a configured Sheets datasource"
+    required: true
+steps:
+  - agent: introspect
+    tool: introspect_sheets
+    args:
+      datasource_name: "{{ datasource }}"
+  - agent: assembly
+    tool: discover_components
+    args:
+      datasource_name: "{{ datasource }}"
+  - agent: validation
+    tool: validate_batch
+    args:
+      sign: true
+      package: true
+  - agent: distribution
+    tool: distribute_batch

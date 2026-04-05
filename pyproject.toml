@@ -65,6 +65,16 @@ dashboard = [
     "fastapi>=0.115",
     "uvicorn>=0.30",
 ]
+notion = [
+    "notion-client>=2.2",
+]
+sheets = [
+    "google-api-python-client>=2.0",
+    "google-auth>=2.0",
+]
+airtable = [
+    "pyairtable>=2.3",
+]
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/sdc_agents"]

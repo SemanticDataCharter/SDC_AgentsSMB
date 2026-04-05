@@ -74,13 +74,24 @@ class AuditConfig(BaseModel):
 class DatasourceConfig(BaseModel):
     """A single datasource definition."""
 
-    type: Literal["sql", "csv", "json", "mongodb"]
+    type: Literal["sql", "csv", "json", "mongodb", "notion", "sheets", "airtable"]
     connection_string: Optional[str] = None
     path: Optional[str] = None
     jsonpath: Optional[str] = None  # JSONPath expression for JSON datasources
     database: Optional[str] = None  # MongoDB database name
     collection: Optional[str] = None  # MongoDB collection name
     metadata_path: Optional[str] = None  # Path to sidecar metadata JSON
+    # Notion (pip install sdc-agents-smb[notion])
+    notion_token: Optional[str] = None
+    notion_database_id: Optional[str] = None
+    # Google Sheets (pip install sdc-agents-smb[sheets])
+    sheets_credentials: Optional[str] = None  # Path to service account JSON
+    spreadsheet_id: Optional[str] = None
+    sheet_name: Optional[str] = None  # Specific sheet (default: first)
+    # Airtable (pip install sdc-agents-smb[airtable])
+    airtable_token: Optional[str] = None
+    airtable_base_id: Optional[str] = None
+    airtable_table: Optional[str] = None
 
 
 class DestinationConfig(BaseModel):

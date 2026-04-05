@@ -1,0 +1,22 @@
+name: "Notion CRM to SDC4"
+description: "Introspect a Notion CRM database, discover matching catalog components, validate and distribute artifacts. Requires: pip install sdc-agents-smb[notion]"
+parameters:
+  - name: datasource
+    description: "Name of a configured Notion datasource"
+    required: true
+steps:
+  - agent: introspect
+    tool: introspect_notion
+    args:
+      datasource_name: "{{ datasource }}"
+  - agent: assembly
+    tool: discover_components
+    args:
+      datasource_name: "{{ datasource }}"
+  - agent: validation
+    tool: validate_batch
+    args:
+      sign: true
+      package: true
+  - agent: distribution
+    tool: distribute_batch

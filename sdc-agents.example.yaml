@@ -58,6 +58,27 @@ datasources:
     database: "clinical"
     collection: "lab_results"
 
+  # --- SMB-native datasources (ToolsetHub plugins) ---
+  # Notion:  pip install sdc-agents-smb[notion]
+  # client_crm:
+  #   type: "notion"
+  #   notion_token: "${NOTION_TOKEN}"
+  #   notion_database_id: "abc123def456"
+
+  # Google Sheets:  pip install sdc-agents-smb[sheets]
+  # financials:
+  #   type: "sheets"
+  #   sheets_credentials: "./credentials/sheets-sa.json"
+  #   spreadsheet_id: "1BxiMVs0XRA5nFMdKvBdBZjgmUUqptlbs74OgVE2upms"
+  #   sheet_name: "Q1 Revenue"
+
+  # Airtable:  pip install sdc-agents-smb[airtable]
+  # inventory:
+  #   type: "airtable"
+  #   airtable_token: "${AIRTABLE_TOKEN}"
+  #   airtable_base_id: "appXXXXXXXXXX"
+  #   airtable_table: "Products"
+
   # --- Cloud data platforms (install the driver, then use type: sql) ---
   # Snowflake:  pip install snowflake-sqlalchemy
   # snowflake_warehouse:

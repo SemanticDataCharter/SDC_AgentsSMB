@@ -299,7 +299,7 @@ def info(ctx: click.Context) -> None:
         "catalog": 7,
         "distribution": 5,
         "generator": 3,
-        "introspect": 6,
+        "introspect": "6+",  # Dynamic: +1 per installed ToolsetHub toolset
         "knowledge": 3,
         "mapping": 3,
         "validation": 3,
@@ -307,6 +307,19 @@ def info(ctx: click.Context) -> None:
     for name in sorted(AGENT_REGISTRY):
         count = tool_counts.get(name, "?")
         click.echo(f"  {name:16s} {count} tools")
+
+    # Show installed ToolsetHub toolsets
+    from sdc_agents.common.toolset_loader import ToolsetLoader
+
+    loader = ToolsetLoader(config)
+    toolsets = loader.discover_installed()
+    installed = [t for t in toolsets if t.get("available")]
+    if installed:
+        click.echo(f"  + {len(installed)} ToolsetHub toolset(s) installed:")
+        for t in installed:
+            click.echo(f"    {t['name']:28s} {len(t.get('tools', []))} tools")
+    else:
+        click.echo("  + 0 ToolsetHub toolsets installed (3 available)")
     click.echo()
 
     # Datasources
@@ -815,3 +828,102 @@ def compliance_report(
         click.echo(f"Report written to: {output}")
     else:
         click.echo(content)
+
+
+# ---------------------------------------------------------------------------
+# toolset
+# ---------------------------------------------------------------------------
+
+
+@main.group()
+def toolset() -> None:
+    """Manage ToolsetHub toolsets (SMB datasource plugins)."""
+
+
+@toolset.command("list")
+@click.pass_context
+def toolset_list(ctx: click.Context) -> None:
+    """List available and installed ToolsetHub toolsets."""
+    from sdc_agents.common.config import load_config
+    from sdc_agents.common.toolset_loader import ToolsetLoader
+
+    try:
+        config = load_config(ctx.obj["config_path"])
+    except (FileNotFoundError, KeyError):
+        from sdc_agents.common.config import SDCAgentsConfig
+
+        config = SDCAgentsConfig()
+
+    loader = ToolsetLoader(config)
+    toolsets = loader.discover_installed()
+
+    if not toolsets:
+        click.echo("No toolsets found.")
+        return
+
+    click.echo(f"ToolsetHub toolsets ({len(toolsets)}):")
+    for t in toolsets:
+        status = t.get("status", "?")
+        security = t.get("security", {})
+        hosts = ", ".join(security.get("network_hosts", []))
+        click.echo(f"  {t['name']:28s} {status}")
+        click.echo(f"    {t.get('description', '')}")
+        click.echo(f"    network: {hosts}  read-only: {not security.get('file_write', False)}")
+
+
+@toolset.command("info")
+@click.argument("name")
+@click.pass_context
+def toolset_info(ctx: click.Context, name: str) -> None:
+    """Show details of a ToolsetHub toolset."""
+    from sdc_agents.common.config import load_config
+    from sdc_agents.common.toolset_loader import ToolsetLoader
+
+    try:
+        config = load_config(ctx.obj["config_path"])
+    except (FileNotFoundError, KeyError):
+        from sdc_agents.common.config import SDCAgentsConfig
+
+        config = SDCAgentsConfig()
+
+    loader = ToolsetLoader(config)
+    toolsets = loader.discover_installed()
+
+    found = None
+    for t in toolsets:
+        if t["name"] == name:
+            found = t
+            break
+
+    if not found:
+        available = [t["name"] for t in toolsets]
+        raise click.ClickException(
+            f"Toolset '{name}' not found. Available: {', '.join(available)}"
+        )
+
+    click.echo(f"Toolset: {found['name']} v{found.get('version', '?')}")
+    click.echo(f"  Author:      {found.get('author', '?')}")
+    click.echo(f"  Description: {found.get('description', '')}")
+    click.echo(f"  Status:      {found.get('status', '?')}")
+    click.echo()
+
+    security = found.get("security", {})
+    click.echo("  Security Scope:")
+    click.echo(f"    Network access:  {security.get('network_access', False)}")
+    click.echo(f"    Network hosts:   {', '.join(security.get('network_hosts', []))}")
+    click.echo(f"    Datasource types: {', '.join(security.get('datasource_types', []))}")
+    click.echo(f"    File write:      {security.get('file_write', False)}")
+    click.echo(f"    Audit compliant: {security.get('audit_compliant', False)}")
+    click.echo()
+
+    tools = found.get("tools", [])
+    if tools:
+        click.echo(f"  Tools ({len(tools)}):")
+        for tool in tools:
+            click.echo(f"    - {tool['name']}: {tool.get('description', '')}")
+
+    deps = found.get("dependencies", [])
+    if deps:
+        click.echo(f"  Dependencies: {', '.join(deps)}")
+        extra = found.get("install_extra", name)
+        click.echo(f"  Install: pip install sdc-agents-smb[{extra}]")

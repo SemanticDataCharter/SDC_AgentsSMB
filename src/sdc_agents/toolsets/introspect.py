@@ -22,6 +22,7 @@ from google.adk.tools.base_toolset import BaseToolset
 from sdc_agents.common.audit import AuditLogger
 from sdc_agents.common.cache import CacheManager
 from sdc_agents.common.config import SDCAgentsConfig
+from sdc_agents.common.toolset_loader import ToolsetLoader
 
 # Regex to reject write operations — anchored to start of statement
 _WRITE_PATTERN = re.compile(
@@ -248,9 +249,15 @@ class IntrospectToolset(BaseToolset):
         self._cache = CacheManager(config.cache.root)
         self._cache.ensure_dirs()
         self._audit = AuditLogger(config.audit.path, config.audit.log_level)
+        self._toolset_loader = ToolsetLoader(config)
 
     async def get_tools(self, readonly_context=None) -> list:
-        """Return the introspection tools as FunctionTool instances."""
+        """Return the introspection tools as FunctionTool instances.
+
+        Includes core tools (SQL, CSV, JSON, MongoDB, drift detection)
+        plus any ToolsetHub toolset tools that are installed (Notion,
+        Sheets, Airtable, and community extensions).
+        """
         tools = [
             FunctionTool(self.introspect_sql),
             FunctionTool(self.introspect_sql_schema),
@@ -259,6 +266,15 @@ class IntrospectToolset(BaseToolset):
             FunctionTool(self.introspect_mongodb),
             FunctionTool(self.detect_schema_drift),
         ]
+
+        # Discover and add ToolsetHub introspection tools
+        for toolset in self._toolset_loader.load_available_toolsets():
+            try:
+                toolset_tools = await toolset.get_tools()
+                tools.extend(toolset_tools)
+            except Exception:
+                pass  # Skip toolsets that fail to load tools
+
         if readonly_context and self.tool_filter:
             return [t for t in tools if self._is_tool_selected(t, readonly_context)]
         return tools
@@ -922,10 +938,31 @@ class IntrospectToolset(BaseToolset):
             current = await self.introspect_json(datasource_name)
         elif ds.type == "mongodb":
             current = await self.introspect_mongodb(datasource_name)
+        elif ds.type in ("notion", "sheets", "airtable"):
+            # Delegate to ToolsetHub toolsets
+            toolset_tool_name = f"introspect_{ds.type}"
+            found = False
+            for toolset in self._toolset_loader.load_available_toolsets():
+                ts_tools = await toolset.get_tools()
+                for t in ts_tools:
+                    if t.name == toolset_tool_name:
+                        current = await t.run_async(
+                            args={"datasource_name": datasource_name}, tool_context=None
+                        )
+                        found = True
+                        break
+                if found:
+                    break
+            if not found:
+                extra = ds.type
+                raise ImportError(
+                    f"Toolset for '{ds.type}' not installed. "
+                    f"Install with: pip install sdc-agents-smb[{extra}]"
+                )
         else:
             raise ValueError(
-                f"Datasource type '{ds.type}' not yet supported for drift detection. "
-                f"Supported: sql, csv, json, mongodb"
+                f"Datasource type '{ds.type}' not supported for drift detection. "
+                f"Supported: sql, csv, json, mongodb, notion, sheets, airtable"
             )
 
         # If no previous introspection, return baseline (no drift)
