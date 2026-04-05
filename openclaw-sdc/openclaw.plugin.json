@@ -1,6 +1,6 @@
 {
   "name": "sdc-data-integrity",
-  "version": "0.1.0",
+  "version": "4.0.0",
   "description": "Structured data introspection, validation, and distribution via SDC Agents SMB. Introspect SQL, CSV, JSON, MongoDB, Notion, Google Sheets, and Airtable datasources. Validate against SDC4 semantic schemas. Download data model packages.",
   "author": "Axius SDC, Inc.",
   "homepage": "https://axius-sdc.com",

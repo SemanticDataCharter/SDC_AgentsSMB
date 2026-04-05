@@ -1,6 +1,6 @@
 {
   "name": "sdc-data-integrity",
-  "version": "0.1.0",
+  "version": "4.0.0",
   "description": "SDC Agents SMB data integrity tools for OpenClaw — structured data introspection, validation, and distribution",
   "author": "Axius SDC, Inc. <contact@axius-sdc.com>",
   "license": "Apache-2.0",

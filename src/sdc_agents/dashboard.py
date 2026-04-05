@@ -23,7 +23,7 @@ except ImportError:
         "Install with: pip install sdc-agents-smb[dashboard]"
     )
 
-app = FastAPI(title="SDC Agents SMB — Audit Dashboard", version="0.1.0")
+app = FastAPI(title="SDC Agents SMB — Audit Dashboard", version="4.0.0")
 
 # Set by CLI before uvicorn.run()
 _audit_path: str = ".sdc-cache/audit.jsonl"

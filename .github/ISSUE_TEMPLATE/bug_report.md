@@ -69,7 +69,7 @@ Paste config here
 
 - **OS**: (e.g., Ubuntu 24.04, Windows 11, macOS 15)
 - **Python**: (e.g., 3.12.3)
-- **sdc-agents-smb version**: (e.g., 0.1.0)
+- **sdc-agents-smb version**: (e.g., 4.0.0)
 - **Ollama model**: (e.g., gemma4:26b)
 - **Installed extras**: (e.g., `[notion,dashboard]`)
 

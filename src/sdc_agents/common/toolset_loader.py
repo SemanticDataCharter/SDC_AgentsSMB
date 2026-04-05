@@ -26,7 +26,7 @@ logger = logging.getLogger("sdc_agents.toolset_loader")
 _BUILTIN_TOOLSETS: dict[str, dict] = {
     "sdc-toolset-notion": {
         "name": "sdc-toolset-notion",
-        "version": "0.1.0",
+        "version": "4.0.0",
         "description": "Notion database introspection for SDC Agents SMB",
         "author": "Axius SDC, Inc.",
         "module": "sdc_agents.toolsets.notion_introspect",
@@ -46,7 +46,7 @@ _BUILTIN_TOOLSETS: dict[str, dict] = {
     },
     "sdc-toolset-sheets": {
         "name": "sdc-toolset-sheets",
-        "version": "0.1.0",
+        "version": "4.0.0",
         "description": "Google Sheets introspection for SDC Agents SMB",
         "author": "Axius SDC, Inc.",
         "module": "sdc_agents.toolsets.sheets_introspect",
@@ -66,7 +66,7 @@ _BUILTIN_TOOLSETS: dict[str, dict] = {
     },
     "sdc-toolset-airtable": {
         "name": "sdc-toolset-airtable",
-        "version": "0.1.0",
+        "version": "4.0.0",
         "description": "Airtable base introspection for SDC Agents SMB",
         "author": "Axius SDC, Inc.",
         "module": "sdc_agents.toolsets.airtable_introspect",

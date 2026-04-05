@@ -98,7 +98,7 @@ Purpose-scoped agents for personal and SMB usage with local LLM via Ollama.
 |---|---|
 | **Repo** | [SemanticDataCharter/SDC_AgentsSMB](https://github.com/SemanticDataCharter/SDC_AgentsSMB) |
 | **License** | Apache 2.0 |
-| **Status** | Active (v0.1.0) |
+| **Status** | Active (v4.0.0) |
 | **Install** | `pip install sdc-agents-smb` |
 | **Agents** | 8 (39 tools including ToolsetHub plugins) |
 | **LLM** | Any Ollama model (gemma4:26b default, no API key) |

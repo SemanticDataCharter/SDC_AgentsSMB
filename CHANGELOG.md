@@ -2,12 +2,13 @@
 
 All notable changes to SDC Agents SMB will be documented in this file.
 
-The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
-and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
+
+This project uses **SDC ecosystem versioning**: the MAJOR version represents the SDC generation (4.x.x = SDC4). MINOR versions add backward-compatible features. PATCH versions fix bugs and documentation. See [SDCRM VERSIONING.md](https://github.com/SemanticDataCharter/SDCRM/blob/main/docs/VERSIONING.md) for the full strategy.
 
 ---
 
-## [0.1.0] - 2026-04-05
+## [4.0.0] - 2026-04-05
 
 ### Added
 
