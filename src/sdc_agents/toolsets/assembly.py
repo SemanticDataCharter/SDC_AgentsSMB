@@ -8,6 +8,9 @@ Supports two assembly modes:
 - **Pure reuse**: all components referenced by ct_id → synchronous (HTTP 200)
 - **Mixed**: some components need minting (label + data_type) → async (HTTP 202)
 
+Includes HITL review gate for billable minting operations and hybrid
+polling for async assembly tasks.
+
 Wallet-aware: raises ``InsufficientFundsError`` on HTTP 402.
 """
 
@@ -17,7 +20,9 @@ import asyncio
 import json
 import re
 import time
+from datetime import datetime, timezone
 from difflib import SequenceMatcher
+from pathlib import Path
 from typing import Optional
 
 import httpx
@@ -115,10 +120,13 @@ class AssemblyToolset(BaseToolset):
 
     async def get_tools(self) -> list[FunctionTool]:
         return [
+            FunctionTool(self.verify_project_scope),
             FunctionTool(self.discover_components),
             FunctionTool(self.propose_cluster_hierarchy),
             FunctionTool(self.select_contextual_components),
             FunctionTool(self.assemble_model),
+            FunctionTool(self.submit_approved_assembly),
+            FunctionTool(self.poll_assembly_task),
         ]
 
     @staticmethod
@@ -291,6 +299,69 @@ class AssemblyToolset(BaseToolset):
             self._modeler_project = None
 
         return self._modeler_project
+
+    async def verify_project_scope(self) -> dict:
+        """Verify the Modeler's default project is non-public.
+
+        SDC Agents SMB requires all created components to live in a
+        private project. Public catalog components can be browsed and
+        reused, but new components must not be created in public projects.
+
+        Returns:
+            Dict with project_ct_id, project_name, is_public, and status.
+
+        Raises:
+            ValueError: If no API key, no Modeler, no default project,
+                or project is public.
+        """
+        start_time = time.monotonic()
+
+        if not self._config.sdcstudio.api_key:
+            raise ValueError(
+                "API key required for project scope verification. "
+                "Set sdcstudio.api_key in your config."
+            )
+
+        try:
+            resp = await self._http.get("/api/v1/auth/modeler/")
+            resp.raise_for_status()
+            data = resp.json()
+        except (httpx.HTTPStatusError, httpx.RequestError) as exc:
+            raise ValueError(f"Cannot verify project scope: {exc}") from exc
+
+        project_ct_id = data.get("project_ct_id")
+        project_name = data.get("project_name", "")
+        is_public = data.get("project_is_public", False)
+
+        if not project_ct_id:
+            raise ValueError(
+                "No default project set for your SDCStudio Modeler account. "
+                "Create a private project in SDCStudio and set it as your default."
+            )
+
+        if is_public:
+            raise ValueError(
+                f'SDCStudio default project "{project_name}" is public (is_public=True). '
+                "SDC Agents SMB requires a non-public project for component creation. "
+                "Public catalog components can still be browsed and reused. "
+                "Set your default project to a private project in SDCStudio."
+            )
+
+        result = {
+            "project_ct_id": project_ct_id,
+            "project_name": project_name,
+            "is_public": is_public,
+            "status": "verified_private",
+        }
+
+        self._audit.log(
+            agent="assembly",
+            tool="verify_project_scope",
+            inputs={},
+            outputs=result,
+            start_time=start_time,
+        )
+        return result
 
     async def discover_components(
         self,
@@ -723,6 +794,26 @@ class AssemblyToolset(BaseToolset):
         )
         return result
 
+    def _has_mint_components(self, assembly_tree: dict) -> list[dict]:
+        """Check if an assembly tree contains components that need minting.
+
+        Returns list of components without ct_id (need minting).
+        """
+        mint = []
+        for comp in assembly_tree.get("components", []):
+            if not comp.get("ct_id"):
+                mint.append(comp)
+        for cluster in assembly_tree.get("clusters", []):
+            mint.extend(self._has_mint_components(cluster))
+        return mint
+
+    def _count_reuse_components(self, assembly_tree: dict) -> int:
+        """Count components with ct_id (reuse, free)."""
+        count = sum(1 for c in assembly_tree.get("components", []) if c.get("ct_id"))
+        for cluster in assembly_tree.get("clusters", []):
+            count += self._count_reuse_components(cluster)
+        return count
+
     async def assemble_model(
         self,
         title: str,
@@ -732,11 +823,16 @@ class AssemblyToolset(BaseToolset):
     ) -> dict:
         """Assemble a data model by calling the SDCStudio Assembly API.
 
-        Supports two response modes:
-        - **Pure reuse** (HTTP 200): all components have ct_id. Server returns
-          ``CatalogDMDetailSerializer`` (ct_id, title, artifacts, components).
-        - **Mixed** (HTTP 202): some components need minting. Returns
-          task_id and data_source_ct_id for async polling.
+        Enforces private project scope before assembly. When
+        ``assembly.review_before_publish`` is enabled (default) and
+        minting is required, writes a review manifest to
+        ``.sdc-cache/pending/`` for user approval instead of calling
+        the API directly.
+
+        Supports three response modes:
+        - **Pending review**: minting needed + review enabled → manifest written
+        - **Pure reuse** (HTTP 200): all components have ct_id → sync result
+        - **Mixed** (HTTP 202): minting needed, review disabled → async task
 
         Args:
             title: Title for the new data model.
@@ -749,17 +845,19 @@ class AssemblyToolset(BaseToolset):
 
         Returns:
             Dict with assembly result. Shape depends on response mode:
+            - Pending review: ``{mode: "pending_review", manifest_path, summary}``
             - Sync (200): ``{dm_ct_id, title, status, artifact_urls, mode: "sync"}``
-              (dm_ct_id and artifact_urls mapped from server's ct_id and artifacts)
-            - Async (202): ``{task_id, data_source_ct_id, estimated_cost,
-              new_components, status: "processing", mode: "async"}``
+            - Async (202): ``{task_id, estimated_cost, mode: "async"}``
 
         Raises:
-            ValueError: If assembly_tree is missing required structure.
+            ValueError: If assembly_tree is missing required structure or
+                project scope check fails.
             InsufficientFundsError: If wallet balance is insufficient (HTTP 402).
-            httpx.HTTPStatusError: If the Assembly API returns an error.
         """
         start_time = time.monotonic()
+
+        # Pre-flight: verify private project scope
+        await self.verify_project_scope()
 
         # Validate assembly tree structure
         if not isinstance(assembly_tree, dict):
@@ -769,6 +867,101 @@ class AssemblyToolset(BaseToolset):
         if "components" not in assembly_tree and "clusters" not in assembly_tree:
             raise ValueError("assembly_tree must have 'components' and/or 'clusters'")
 
+        # Check if minting is needed
+        mint_components = self._has_mint_components(assembly_tree)
+        reuse_count = self._count_reuse_components(assembly_tree)
+
+        # HITL review gate: if minting needed and review enabled, pause for approval
+        if mint_components and self._config.assembly.review_before_publish:
+            # Estimate cost (rough: $0.50 per minted component)
+            estimated_cost = len(mint_components) * 0.50
+
+            # Get wallet balance for the review summary
+            wallet_balance = 0.0
+            try:
+                if self._config.sdcstudio.api_key:
+                    headers = {"Authorization": f"Token {self._config.sdcstudio.api_key}"}
+                    resp = await self._http.get("/api/v1/wallet/", headers=headers)
+                    if resp.status_code == 200:
+                        wallet_data = resp.json()
+                        wallet_balance = float(wallet_data.get("balance", 0))
+            except Exception:
+                pass  # Wallet check is best-effort for the review summary
+
+            # Slugify title for filename
+            title_slug = re.sub(r"[^a-zA-Z0-9_-]", "_", title).strip("_").lower()
+            if not title_slug:
+                title_slug = "assembly"
+
+            manifest = {
+                "name": title_slug,
+                "title": title,
+                "description": description,
+                "created": datetime.now(timezone.utc).isoformat(),
+                "status": "pending_review",
+                "summary": {
+                    "reuse_count": reuse_count,
+                    "mint_count": len(mint_components),
+                    "estimated_cost": estimated_cost,
+                    "wallet_balance": wallet_balance,
+                },
+                "reused_components": [
+                    c for c in self._flatten_all_components(assembly_tree) if c.get("ct_id")
+                ],
+                "mint_components": mint_components,
+                "assembly_tree": assembly_tree,
+                "contextual": contextual,
+            }
+
+            manifest_path = self._cache.pending_path(title_slug)
+            manifest_path.write_text(json.dumps(manifest, indent=2, default=str))
+
+            result = {
+                "mode": "pending_review",
+                "manifest_path": str(manifest_path),
+                "summary": manifest["summary"],
+                "message": (
+                    f"Assembly requires minting {len(mint_components)} new component(s) "
+                    f"(estimated cost: ${estimated_cost:.2f}). "
+                    f"{reuse_count} component(s) will be reused at no cost. "
+                    f"Review with: sdc-agents assembly review {title_slug}"
+                ),
+            }
+
+            self._audit.log(
+                agent="assembly",
+                tool="assemble_model",
+                inputs={"title": title, "mode": "pending_review"},
+                outputs=result,
+                start_time=start_time,
+            )
+            return result
+
+        # No review needed — proceed to API call
+        return await self._call_assembly_api(
+            title, description, assembly_tree, contextual, start_time
+        )
+
+    def _flatten_all_components(self, tree: dict) -> list[dict]:
+        """Flatten all components from an assembly tree recursively."""
+        comps = list(tree.get("components", []))
+        for cluster in tree.get("clusters", []):
+            comps.extend(self._flatten_all_components(cluster))
+        return comps
+
+    async def _call_assembly_api(
+        self,
+        title: str,
+        description: str,
+        assembly_tree: dict,
+        contextual: Optional[dict],
+        start_time: float,
+    ) -> dict:
+        """Call the SDCStudio Assembly API and return the result.
+
+        Shared implementation used by both assemble_model (direct) and
+        submit_approved_assembly (after HITL approval).
+        """
         url = f"{self._base_url}/api/v1/dmgen/assemble/"
         payload: dict = {
             "title": title,
@@ -810,6 +1003,160 @@ class AssemblyToolset(BaseToolset):
             agent="assembly",
             tool="assemble_model",
             inputs={"title": title, "mode": result.get("mode")},
+            outputs=result,
+            start_time=start_time,
+        )
+        return result
+
+    async def submit_approved_assembly(self, manifest_name: str) -> dict:
+        """Submit a previously approved assembly manifest to the Assembly API.
+
+        Reads the approved manifest from ``.sdc-cache/pending/``, calls
+        the Assembly API, and updates the manifest status.
+
+        Args:
+            manifest_name: Name of the manifest file (without .json extension).
+
+        Returns:
+            Dict with assembly result (same as assemble_model).
+
+        Raises:
+            FileNotFoundError: If manifest does not exist.
+            ValueError: If manifest status is not 'approved'.
+        """
+        start_time = time.monotonic()
+
+        manifest_path = self._cache.pending_path(manifest_name)
+        if not manifest_path.is_file():
+            raise FileNotFoundError(
+                f"No pending manifest '{manifest_name}'. "
+                "Use 'sdc-agents assembly list-pending' to see available manifests."
+            )
+
+        manifest = json.loads(manifest_path.read_text())
+
+        if manifest.get("status") != "approved":
+            raise ValueError(
+                f"Manifest '{manifest_name}' has status '{manifest.get('status')}', "
+                "not 'approved'. Use 'sdc-agents assembly approve' first."
+            )
+
+        result = await self._call_assembly_api(
+            title=manifest["title"],
+            description=manifest["description"],
+            assembly_tree=manifest["assembly_tree"],
+            contextual=manifest.get("contextual"),
+            start_time=start_time,
+        )
+
+        # Update manifest with result
+        manifest["status"] = "submitted"
+        manifest["result"] = result
+        manifest_path.write_text(json.dumps(manifest, indent=2, default=str))
+
+        return result
+
+    async def poll_assembly_task(
+        self,
+        task_id: str,
+        timeout_seconds: Optional[int] = None,
+        poll_interval: Optional[int] = None,
+    ) -> dict:
+        """Poll an async assembly task until completion or timeout.
+
+        For mixed assemblies (HTTP 202) where components need minting,
+        the server-side pipeline runs asynchronously. This tool polls
+        the task status.
+
+        If the task completes within timeout, returns the full DM result.
+        If still processing after timeout, saves to ``.sdc-cache/pending/``
+        and returns a deferred status.
+
+        Args:
+            task_id: Task ID from the 202 response.
+            timeout_seconds: Max seconds to poll. Defaults to config value.
+            poll_interval: Seconds between polls. Defaults to config value.
+
+        Returns:
+            Dict with status ("complete" or "deferred"), dm_ct_id (if
+            complete), artifact_urls (if complete), or pending_path
+            (if deferred).
+        """
+        start_time = time.monotonic()
+        timeout = timeout_seconds or self._config.assembly.poll_timeout_seconds
+        interval = poll_interval or self._config.assembly.poll_interval_seconds
+
+        elapsed = 0.0
+        while elapsed < timeout:
+            try:
+                resp = await self._http.get(f"/api/v1/dmgen/tasks/{task_id}/")
+                resp.raise_for_status()
+                data = resp.json()
+
+                status = data.get("status", "processing")
+                if status in ("complete", "completed", "published"):
+                    result = {
+                        "status": "complete",
+                        "task_id": task_id,
+                        "dm_ct_id": data.get("dm_ct_id", data.get("ct_id", "")),
+                        "title": data.get("title", ""),
+                        "artifact_urls": data.get("artifacts", {}),
+                    }
+                    self._audit.log(
+                        agent="assembly",
+                        tool="poll_assembly_task",
+                        inputs={"task_id": task_id},
+                        outputs=result,
+                        start_time=start_time,
+                    )
+                    return result
+
+                if status in ("failed", "error"):
+                    result = {
+                        "status": "failed",
+                        "task_id": task_id,
+                        "error": data.get("error", data.get("message", "Assembly failed")),
+                    }
+                    self._audit.log(
+                        agent="assembly",
+                        tool="poll_assembly_task",
+                        inputs={"task_id": task_id},
+                        outputs=result,
+                        start_time=start_time,
+                    )
+                    return result
+
+            except (httpx.HTTPStatusError, httpx.RequestError):
+                pass  # Retry on transient errors
+
+            await asyncio.sleep(interval)
+            elapsed = time.monotonic() - start_time
+
+        # Timeout exceeded — save as deferred task
+        deferred = {
+            "task_id": task_id,
+            "type": "assembly",
+            "submitted": datetime.now(timezone.utc).isoformat(),
+            "status": "processing",
+        }
+        pending_path = self._cache.pending_path(f"task_{task_id}")
+        pending_path.write_text(json.dumps(deferred, indent=2))
+
+        result = {
+            "status": "deferred",
+            "task_id": task_id,
+            "pending_path": str(pending_path),
+            "message": (
+                f"Assembly task {task_id} still processing after {timeout}s. "
+                f"Saved to {pending_path}. Check later with: "
+                f"sdc-agents assembly list-pending"
+            ),
+        }
+
+        self._audit.log(
+            agent="assembly",
+            tool="poll_assembly_task",
+            inputs={"task_id": task_id, "timeout_seconds": timeout},
             outputs=result,
             start_time=start_time,
         )

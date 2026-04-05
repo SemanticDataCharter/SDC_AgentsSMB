@@ -16,6 +16,14 @@ model:
   default: "ollama_chat/gemma4:26b"
   ollama_base_url: "http://localhost:11434"
 
+# --- Assembly workflow ---
+# HITL review gate: when enabled, assemblies requiring new (billable) components
+# pause for user approval before calling the Assembly API.
+assembly:
+  review_before_publish: true    # Require approval before minting (default: true)
+  poll_timeout_seconds: 60       # Max seconds to poll async assembly tasks
+  poll_interval_seconds: 5       # Seconds between poll attempts
+
 cache:
   root: ".sdc-cache"
   ttl_hours: 24

@@ -22,6 +22,7 @@ from __future__ import annotations
 
 import json
 import time
+from pathlib import Path
 from typing import Optional
 
 import httpx
@@ -63,6 +64,7 @@ class CatalogToolset(BaseToolset):
             FunctionTool(self.catalog_download_skeleton),
             FunctionTool(self.catalog_download_ontologies),
             FunctionTool(self.catalog_check_wallet),
+            FunctionTool(self.download_package),
         ]
         if readonly_context and self.tool_filter:
             return [t for t in tools if self._is_tool_selected(t, readonly_context)]
@@ -221,6 +223,66 @@ class CatalogToolset(BaseToolset):
             agent="catalog",
             tool="catalog_check_wallet",
             inputs={},
+            outputs=result,
+            start_time=start,
+        )
+        return result
+
+    async def download_package(
+        self,
+        dm_ct_id: str,
+        output_dir: str | None = None,
+    ) -> dict:
+        """Download a published data model's artifact package (.zip).
+
+        Downloads the complete package containing XSD, XML skeleton,
+        JSON, JSON-LD, HTML documentation, and SHA1 checksum.
+
+        Args:
+            dm_ct_id: The ct_id of the published data model.
+            output_dir: Directory to save the package. Defaults to
+                the configured output directory.
+
+        Returns:
+            Dict with dm_ct_id, package_path, and size_bytes.
+        """
+        start = time.monotonic()
+
+        dest_dir = Path(output_dir) if output_dir else Path(self._config.output.directory)
+        dest_dir.mkdir(parents=True, exist_ok=True)
+
+        resp = await self._http.get(f"/api/v1/catalog/dms/{dm_ct_id}/artifacts/zip/")
+        resp.raise_for_status()
+
+        # Response may be a JSON redirect (GCS mode) or direct file content
+        content_type = resp.headers.get("content-type", "")
+
+        if content_type.startswith("application/json"):
+            # GCS mode: response contains a download URL
+            data = resp.json()
+            download_url = data.get("download_url", "")
+            if not download_url:
+                raise ValueError(f"No download URL in response for DM {dm_ct_id}")
+            pkg_resp = await self._http.get(download_url)
+            pkg_resp.raise_for_status()
+            pkg_bytes = pkg_resp.content
+        else:
+            # Direct file content
+            pkg_bytes = resp.content
+
+        package_path = dest_dir / f"{dm_ct_id}.pkg.zip"
+        package_path.write_bytes(pkg_bytes)
+
+        result = {
+            "dm_ct_id": dm_ct_id,
+            "package_path": str(package_path),
+            "size_bytes": len(pkg_bytes),
+        }
+
+        self._audit.log(
+            agent="catalog",
+            tool="download_package",
+            inputs={"dm_ct_id": dm_ct_id, "output_dir": str(dest_dir)},
             outputs=result,
             start_time=start,
         )

@@ -252,13 +252,14 @@ def info(ctx: click.Context) -> None:
     click.echo(f"Cache root  : {config.cache.root}")
     click.echo(f"Output dir  : {config.output.directory}")
     click.echo(f"Audit path  : {config.audit.path}")
+    click.echo(f"HITL review : {'enabled' if config.assembly.review_before_publish else 'disabled'}")
     click.echo()
 
     # Agent inventory with tool counts
     click.echo("Agents (8):")
     tool_counts = {
-        "assembly": 4,
-        "catalog": 6,
+        "assembly": 7,
+        "catalog": 7,
         "distribution": 5,
         "generator": 3,
         "introspect": 5,
@@ -320,3 +321,193 @@ def validate_config(ctx: click.Context) -> None:
         sys.exit(1)
 
     click.echo(f"Config OK: {config_path}")
+
+
+# ---------------------------------------------------------------------------
+# assembly
+# ---------------------------------------------------------------------------
+
+
+@main.group()
+def assembly() -> None:
+    """Manage assembly review manifests and pending tasks."""
+
+
+@assembly.command("list-pending")
+@click.pass_context
+def assembly_list_pending(ctx: click.Context) -> None:
+    """List pending assembly review manifests and deferred tasks."""
+    from sdc_agents.common.config import load_config
+
+    try:
+        config = load_config(ctx.obj["config_path"])
+    except (FileNotFoundError, KeyError):
+        config = None
+
+    cache_root = config.cache.root if config else ".sdc-cache"
+    pending_dir = Path(cache_root) / "pending"
+
+    if not pending_dir.is_dir():
+        click.echo("No pending directory found.")
+        return
+
+    manifests = sorted(pending_dir.glob("*.json"))
+    if not manifests:
+        click.echo("No pending manifests.")
+        return
+
+    for path in manifests:
+        try:
+            data = json.loads(path.read_text())
+            status = data.get("status", "unknown")
+            name = data.get("name", data.get("task_id", path.stem))
+            title = data.get("title", "")
+            created = data.get("created", data.get("submitted", ""))
+            summary = data.get("summary", {})
+
+            click.echo(f"  {name:30s} status={status:16s} created={created}")
+            if title:
+                click.echo(f"    title: {title}")
+            if summary:
+                reuse = summary.get("reuse_count", 0)
+                mint = summary.get("mint_count", 0)
+                cost = summary.get("estimated_cost", 0)
+                click.echo(f"    reuse: {reuse}, mint: {mint}, est. cost: ${cost:.2f}")
+        except (json.JSONDecodeError, KeyError):
+            click.echo(f"  {path.stem:30s} (unreadable)")
+
+
+@assembly.command("review")
+@click.argument("name")
+@click.pass_context
+def assembly_review(ctx: click.Context, name: str) -> None:
+    """Display details of a pending assembly review manifest."""
+    from sdc_agents.common.config import load_config
+
+    try:
+        config = load_config(ctx.obj["config_path"])
+    except (FileNotFoundError, KeyError):
+        config = None
+
+    cache_root = config.cache.root if config else ".sdc-cache"
+    manifest_path = Path(cache_root) / "pending" / f"{name}.json"
+
+    if not manifest_path.is_file():
+        raise click.ClickException(f"No manifest found: {name}")
+
+    manifest = json.loads(manifest_path.read_text())
+
+    click.echo(f"Assembly Review: {manifest.get('title', name)}")
+    click.echo(f"  Status  : {manifest.get('status', '?')}")
+    click.echo(f"  Created : {manifest.get('created', '?')}")
+    click.echo()
+
+    summary = manifest.get("summary", {})
+    click.echo(f"  Reuse components : {summary.get('reuse_count', 0)} (free)")
+    click.echo(f"  Mint components  : {summary.get('mint_count', 0)} (billable)")
+    click.echo(f"  Estimated cost   : ${summary.get('estimated_cost', 0):.2f}")
+    click.echo(f"  Wallet balance   : ${summary.get('wallet_balance', 0):.2f}")
+    click.echo()
+
+    # Show components to mint
+    mint_comps = manifest.get("mint_components", [])
+    if mint_comps:
+        click.echo("  Components to mint:")
+        for comp in mint_comps:
+            label = comp.get("label", "?")
+            dtype = comp.get("data_type", "?")
+            click.echo(f"    - {label} ({dtype})")
+    click.echo()
+
+    # Show reused components
+    reused = manifest.get("reused_components", [])
+    if reused:
+        click.echo(f"  Components reused ({len(reused)}):")
+        for comp in reused[:10]:  # Show first 10
+            label = comp.get("label", "?")
+            ct_id = comp.get("ct_id", "?")
+            click.echo(f"    - {label} [{ct_id}]")
+        if len(reused) > 10:
+            click.echo(f"    ... and {len(reused) - 10} more")
+
+    click.echo()
+    click.echo(f"  To approve: sdc-agents assembly approve {name}")
+    click.echo(f"  To reject:  sdc-agents assembly reject {name}")
+
+
+@assembly.command("approve")
+@click.argument("name")
+@click.pass_context
+def assembly_approve(ctx: click.Context, name: str) -> None:
+    """Approve a pending assembly manifest and submit to the Assembly API."""
+    from sdc_agents.common.config import load_config
+
+    try:
+        config = load_config(ctx.obj["config_path"])
+    except (FileNotFoundError, KeyError) as exc:
+        raise click.ClickException(str(exc)) from exc
+
+    cache_root = config.cache.root
+    manifest_path = Path(cache_root) / "pending" / f"{name}.json"
+
+    if not manifest_path.is_file():
+        raise click.ClickException(f"No manifest found: {name}")
+
+    manifest = json.loads(manifest_path.read_text())
+
+    if manifest.get("status") != "pending_review":
+        raise click.ClickException(
+            f"Manifest '{name}' has status '{manifest.get('status')}', not 'pending_review'."
+        )
+
+    # Update status to approved
+    manifest["status"] = "approved"
+    manifest_path.write_text(json.dumps(manifest, indent=2, default=str))
+
+    click.echo(f"Approved: {name}")
+    click.echo("Submitting to Assembly API...")
+
+    # Submit via toolset
+    toolset = _load_toolset("assembly", config)
+    try:
+        result = asyncio.run(toolset.submit_approved_assembly(name))
+        mode = result.get("mode", "?")
+        if mode == "sync":
+            click.echo(f"  Published: {result.get('dm_ct_id', '?')}")
+            click.echo(f"  Download:  sdc-agents serve --mcp catalog")
+        elif mode == "async":
+            task_id = result.get("task_id", "?")
+            click.echo(f"  Submitted (async): task_id={task_id}")
+            click.echo(f"  Estimated cost: ${result.get('estimated_cost', 0):.2f}")
+        else:
+            click.echo(f"  Result: {json.dumps(result, default=str)}")
+    except Exception as exc:
+        # Revert status on failure
+        manifest["status"] = "pending_review"
+        manifest_path.write_text(json.dumps(manifest, indent=2, default=str))
+        raise click.ClickException(f"Assembly failed: {exc}") from exc
+
+
+@assembly.command("reject")
+@click.argument("name")
+@click.pass_context
+def assembly_reject(ctx: click.Context, name: str) -> None:
+    """Reject and remove a pending assembly manifest."""
+    from sdc_agents.common.config import load_config
+
+    try:
+        config = load_config(ctx.obj["config_path"])
+    except (FileNotFoundError, KeyError):
+        config = None
+
+    cache_root = config.cache.root if config else ".sdc-cache"
+    manifest_path = Path(cache_root) / "pending" / f"{name}.json"
+
+    if not manifest_path.is_file():
+        raise click.ClickException(f"No manifest found: {name}")
+
+    manifest = json.loads(manifest_path.read_text())
+    manifest["status"] = "rejected"
+    manifest_path.write_text(json.dumps(manifest, indent=2, default=str))
+
+    click.echo(f"Rejected: {name}")

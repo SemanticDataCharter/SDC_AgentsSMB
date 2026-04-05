@@ -120,6 +120,14 @@ class KnowledgeConfig(BaseModel):
     sources: Dict[str, KnowledgeSourceConfig] = Field(default_factory=dict)
 
 
+class AssemblyConfig(BaseModel):
+    """Assembly workflow settings for HITL review and async polling."""
+
+    review_before_publish: bool = True
+    poll_timeout_seconds: int = 60
+    poll_interval_seconds: int = 5
+
+
 class SDCAgentsConfig(BaseModel):
     """Top-level configuration for SDC Agents SMB."""
 
@@ -127,6 +135,7 @@ class SDCAgentsConfig(BaseModel):
     model: ModelConfig = Field(default_factory=ModelConfig)
     cache: CacheConfig = Field(default_factory=CacheConfig)
     audit: AuditConfig = Field(default_factory=AuditConfig)
+    assembly: AssemblyConfig = Field(default_factory=AssemblyConfig)
     datasources: Dict[str, DatasourceConfig] = Field(default_factory=dict)
     output: OutputConfig = Field(default_factory=OutputConfig)
     destinations: Dict[str, DestinationConfig] = Field(default_factory=dict)
