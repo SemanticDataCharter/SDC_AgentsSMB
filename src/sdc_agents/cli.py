@@ -292,34 +292,40 @@ def info(ctx: click.Context) -> None:
     click.echo(f"Schedules   : {len(config.schedules)}")
     click.echo()
 
-    # Agent inventory with tool counts
-    click.echo("Agents (8):")
+    # Agent inventory with dynamic tool counts
+    from sdc_agents.common.toolset_loader import ToolsetLoader
+
+    loader = ToolsetLoader(config)
+    toolsets = loader.discover_installed()
+    installed_count = sum(1 for t in toolsets if t.get("available"))
+    introspect_tools = 6 + installed_count  # core + ToolsetHub plugins
+
     tool_counts = {
         "assembly": 7,
         "catalog": 7,
         "distribution": 5,
         "generator": 3,
-        "introspect": "6+",  # Dynamic: +1 per installed ToolsetHub toolset
+        "introspect": introspect_tools,
         "knowledge": 3,
         "mapping": 3,
         "validation": 3,
     }
+    total_tools = sum(tool_counts.values())
+
+    click.echo(f"Agents (8, {total_tools} tools):")
     for name in sorted(AGENT_REGISTRY):
         count = tool_counts.get(name, "?")
-        click.echo(f"  {name:16s} {count} tools")
+        suffix = " (incl. ToolsetHub)" if name == "introspect" and installed_count > 0 else ""
+        click.echo(f"  {name:16s} {count} tools{suffix}")
 
     # Show installed ToolsetHub toolsets
-    from sdc_agents.common.toolset_loader import ToolsetLoader
-
-    loader = ToolsetLoader(config)
-    toolsets = loader.discover_installed()
     installed = [t for t in toolsets if t.get("available")]
     if installed:
-        click.echo(f"  + {len(installed)} ToolsetHub toolset(s) installed:")
+        click.echo(f"  + {len(installed)} ToolsetHub toolset(s):")
         for t in installed:
             click.echo(f"    {t['name']:28s} {len(t.get('tools', []))} tools")
     else:
-        click.echo("  + 0 ToolsetHub toolsets installed (3 available)")
+        click.echo("  + 0 ToolsetHub toolsets (3 available: notion, sheets, airtable)")
     click.echo()
 
     # Datasources
