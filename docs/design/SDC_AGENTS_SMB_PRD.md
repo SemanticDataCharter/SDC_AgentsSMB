@@ -81,6 +81,294 @@ Documented here for completeness. No new work required.
 
 ---
 
+## Phase 1.5 — Private Project Enforcement & Publish/Generate/Download Cycle
+
+### Problem
+
+SDC Agents SMB users are not sophisticated knowledge modelers. They should be able to browse and reuse public catalog components freely, but anything they create must live in a **non-public project** on SDCStudio. Additionally, the current toolset has no mechanism to:
+
+1. Enforce private project scoping at the agent level
+2. Handle the publish → generate → download lifecycle for assembled data models
+3. Provide a human-in-the-loop review gate before billable minting operations
+4. Download completed data model packages to the local filesystem
+
+### Strategic Context
+
+SMB users minting components create a **component discovery engine** for the SDC ecosystem. Axius SDC monitors common component types being created across SMB users, validates their constraints and semantics, and promotes curated versions to the public default library — free for everyone. This feeds a flywheel:
+
+1. SMB users mint components for their needs (billable)
+2. Axius curates common patterns into the public catalog (free to reuse)
+3. Future users find those components and reuse them ($0)
+4. The public catalog grows organically from real-world usage
+5. Enterprise and Sovereign customers get a richer catalog out of the box
+
+The real revenue comes from enterprise and sovereign sales. The SMB tier is the on-ramp and component incubator. The public catalog is the flywheel connecting them.
+
+### 1.5.1 Private Project Enforcement
+
+#### Config Validation
+
+On `sdc-agents validate-config` and `sdc-agents info`, the toolset calls `GET /api/v1/auth/modeler/` to verify:
+
+1. The API key resolves to a valid Modeler
+2. The Modeler has a `default_project` set
+3. The default project has `is_public=False`
+
+If the project is public, emit a **hard error** (not a warning):
+
+```
+Error: SDCStudio default project "My Project" is public (is_public=True).
+SDC Agents SMB requires a non-public project for component creation.
+Public catalog components can still be browsed and reused.
+Set your default project to a private project in SDCStudio, or create one.
+```
+
+#### Runtime Enforcement
+
+The Assembly toolset's `assemble_model` already creates components in the Modeler's default project (server-side). The agent-side enforcement is a pre-flight check before calling the Assembly API.
+
+New tool in `AssemblyToolset`:
+
+```python
+async def verify_project_scope(self) -> dict:
+    """Verify the Modeler's default project is non-public.
+
+    Returns:
+        Dict with project_ct_id, project_name, is_public, and status.
+
+    Raises:
+        ValueError: If no Modeler, no default project, or project is public.
+    """
+```
+
+Called automatically before `assemble_model`. Also available standalone for diagnostics.
+
+#### Files Modified
+
+- `src/sdc_agents/toolsets/assembly.py` — add `verify_project_scope` tool, call before `assemble_model`
+- `src/sdc_agents/cli.py` — add project scope check to `info` and `validate-config`
+
+### 1.5.2 HITL Review Gate
+
+#### Problem
+
+When the Assembly Agent discovers that some components need minting (no existing `ct_id` in the catalog), the user should review and approve before incurring costs. SMB users are not knowledge modelers — they need to see what they're paying for.
+
+#### Solution
+
+A `review_before_publish` config flag (default `true`). When enabled and minting is required:
+
+1. The Assembly Agent proposes the hierarchy and writes a **review manifest** to `.sdc-cache/pending/`
+2. The agent returns a summary: components reused (free), components to mint (billable), estimated cost
+3. The user reviews via CLI: `sdc-agents assembly review <name>`
+4. On approval, the agent calls the Assembly API
+
+#### Review Manifest Format
+
+Written to `.sdc-cache/pending/{name}.json`:
+
+```json
+{
+  "name": "quarterly_revenue_model",
+  "created": "2026-04-04T22:15:33+00:00",
+  "status": "pending_review",
+  "summary": {
+    "reuse_count": 12,
+    "mint_count": 3,
+    "estimated_cost": 1.50,
+    "wallet_balance": 25.00
+  },
+  "reused_components": [
+    {"ct_id": "abc123", "label": "Patient ID", "type": "XdString", "cost": 0.0}
+  ],
+  "mint_components": [
+    {"label": "Specimen Source", "data_type": "XdString", "description": "...", "cost": 0.50}
+  ],
+  "assembly_tree": { ... },
+  "contextual": { ... }
+}
+```
+
+#### CLI Commands
+
+```bash
+# List pending reviews
+sdc-agents assembly list-pending
+
+# Show review details
+sdc-agents assembly review quarterly_revenue_model
+
+# Approve and submit
+sdc-agents assembly approve quarterly_revenue_model
+
+# Reject and discard
+sdc-agents assembly reject quarterly_revenue_model
+```
+
+#### Config
+
+```yaml
+assembly:
+  review_before_publish: true  # Default: true for SMB
+```
+
+#### Files Modified
+
+- `src/sdc_agents/common/config.py` — add `AssemblyConfig` with `review_before_publish`
+- `src/sdc_agents/toolsets/assembly.py` — add review manifest generation, gate before API call
+- `src/sdc_agents/cli.py` — add `assembly` command group with `list-pending`, `review`, `approve`, `reject`
+
+### 1.5.3 Publish/Generate/Download Cycle (Hybrid Polling)
+
+#### Problem
+
+After assembly, the data model must be published, artifacts generated, and the package downloaded. For pure-reuse assemblies (HTTP 200), this is synchronous. For mixed assemblies requiring minting (HTTP 202), the server-side pipeline runs asynchronously and the agent must wait.
+
+#### Solution: Hybrid Polling (Option C)
+
+Poll with a timeout. If the task completes within 60 seconds, return the result immediately. If it takes longer, save the `task_id` to `.sdc-cache/pending/` and notify the user to check later.
+
+#### New Tool: `poll_assembly_task`
+
+Added to `AssemblyToolset`:
+
+```python
+async def poll_assembly_task(
+    self,
+    task_id: str,
+    timeout_seconds: int = 60,
+    poll_interval: int = 5,
+) -> dict:
+    """Poll an async assembly task until completion or timeout.
+
+    For mixed assemblies (HTTP 202) where components need minting,
+    the server-side pipeline runs asynchronously. This tool polls
+    the task status.
+
+    If the task completes within timeout_seconds, returns the full
+    DM result including dm_ct_id and artifact URLs.
+
+    If the task is still processing after timeout, saves the task_id
+    to .sdc-cache/pending/ and returns a deferred status. The
+    scheduler or user can check later.
+
+    Args:
+        task_id: Task ID from the 202 response.
+        timeout_seconds: Maximum time to poll (default 60).
+        poll_interval: Seconds between polls (default 5).
+
+    Returns:
+        Dict with status ("complete" or "deferred"), dm_ct_id (if complete),
+        artifact_urls (if complete), or pending_path (if deferred).
+    """
+```
+
+#### New Tool: `download_package`
+
+Added to `CatalogToolset`:
+
+```python
+async def download_package(
+    self,
+    dm_ct_id: str,
+    output_dir: str | None = None,
+) -> dict:
+    """Download a published data model's artifact package (.zip).
+
+    Downloads the complete package containing XSD, XML skeleton,
+    JSON, JSON-LD, HTML documentation, and SHA1 checksum.
+
+    Args:
+        dm_ct_id: The ct_id of the published data model.
+        output_dir: Directory to save the package. Defaults to
+            the configured output directory.
+
+    Returns:
+        Dict with dm_ct_id, package_path, size_bytes, and
+        artifact list from the manifest.
+    """
+```
+
+#### Flow Diagram
+
+```
+discover_components
+        ↓
+propose_cluster_hierarchy
+        ↓
+  ┌─────────────────────────────────┐
+  │  review_before_publish = true?  │
+  │         AND minting needed?     │
+  └──────────┬──────────────────────┘
+             ↓ yes                    ↓ no (pure reuse or review disabled)
+  Write review manifest          assemble_model
+  to .sdc-cache/pending/              ↓
+             ↓                   ┌────┴────┐
+  User: sdc-agents              │         │
+    assembly approve          200 sync  202 async
+             ↓                   │         │
+  assemble_model                 │    poll_assembly_task
+             ↓                   │    ┌────┴────┐
+        (same flow) ────────────►│  ≤60s     >60s
+                                 │    │         │
+                                 ↓    ↓         ↓
+                           dm_ct_id  dm_ct_id  Save to pending
+                                 │    │        + notify user
+                                 ▼    ▼
+                           download_package
+                                 ↓
+                           ./output/{dm_ct_id}.pkg.zip
+```
+
+#### Deferred Task File
+
+Written to `.sdc-cache/pending/{task_id}.json`:
+
+```json
+{
+  "task_id": "abc123",
+  "type": "assembly",
+  "submitted": "2026-04-04T22:15:33+00:00",
+  "status": "processing",
+  "title": "Quarterly Revenue Model",
+  "estimated_cost": 1.50
+}
+```
+
+When the scheduler checks pending tasks and finds completion, it triggers `download_package` and sends a notification.
+
+#### Scheduler Integration
+
+The Phase 2 CLI scheduler can include a built-in job type for checking pending assembly tasks:
+
+```yaml
+schedules:
+  check_pending_assemblies:
+    cron: "*/5 * * * *"  # Every 5 minutes
+    steps:
+      - agent: assembly
+        tool: poll_assembly_task
+        args:
+          task_id: "__pending__"  # Special value: check all pending tasks
+```
+
+#### Files Modified
+
+- `src/sdc_agents/toolsets/assembly.py` — add `verify_project_scope`, `poll_assembly_task`
+- `src/sdc_agents/toolsets/catalog.py` — add `download_package`
+- `src/sdc_agents/cli.py` — add `assembly` command group
+- `src/sdc_agents/common/config.py` — add `AssemblyConfig`
+
+### Security
+
+- Private project enforcement is a **pre-flight check** — the server also enforces project scoping, so this is defense-in-depth
+- Review manifests contain no credentials — only component metadata and cost estimates
+- `download_package` writes only to the configured output directory (path confinement maintained)
+- Polling uses the existing authenticated `httpx.AsyncClient` — no new credential scope
+- All operations are logged via `AuditLogger`
+
+---
+
 ## Phase 2 — Reach
 
 ### 2.1 Notification Destinations
@@ -758,14 +1046,19 @@ Reads `.sdc-cache/audit.jsonl` and `.sdc-cache/lineage.jsonl`, aggregates by age
 │  ┌────────────────────────────▼──────────────────────────────────────┐  │
 │  │                    Agent Pipeline                                 │  │
 │  │                                                                   │  │
-│  │  Introspect ──▶ Mapping ──▶ Generator ──▶ Validation ──▶ Distrib │  │
-│  │      │                                        │              │    │  │
-│  │      │ drift detection                        │              │    │  │
-│  │      ▼                                        ▼              ▼    │  │
-│  │  .sdc-cache/                              Notifier      Lineage  │  │
-│  │  introspections/                         ┌────┴────┐    Logger   │  │
-│  │                                          │         │             │  │
-│  │                                       Slack   Telegram   Email   │  │
+│  │  Introspect ──▶ Assembly ──▶ [HITL Review] ──▶ Assemble ──▶ Poll │  │
+│  │      │            │              │                  │         │    │  │
+│  │      │            │         .sdc-cache/         download   Notify │  │
+│  │      │            │         pending/            _package        │  │
+│  │      │            ▼                                              │  │
+│  │      │     Mapping ──▶ Generator ──▶ Validation ──▶ Distribution │  │
+│  │      │                                   │              │        │  │
+│  │      │ drift detection                   │              ▼        │  │
+│  │      ▼                                   ▼           Lineage     │  │
+│  │  .sdc-cache/                          Notifier       Logger      │  │
+│  │  introspections/                    ┌────┴────┐                  │  │
+│  │                                     │         │                  │  │
+│  │                                  Slack   Telegram   Email        │  │
 │  └───────────────────────────────────────────────────────────────────┘  │
 │                                                                          │
 │  ┌───────────────────────────────────────────────────────────────────┐  │
@@ -777,6 +1070,7 @@ Reads `.sdc-cache/audit.jsonl` and `.sdc-cache/lineage.jsonl`, aggregates by age
 │  │  ├── schemas/           (immutable, keyed by ct_id)              │  │
 │  │  ├── introspections/    (per-datasource, versioned for drift)    │  │
 │  │  ├── mappings/          (column-to-component configs)            │  │
+│  │  ├── pending/           (HITL review manifests, deferred tasks)  │  │
 │  │  └── knowledge/         (ChromaDB vector store)                  │  │
 │  │                                                                   │  │
 │  │  AuditLogger ──▶ audit.jsonl                                     │  │
@@ -802,6 +1096,7 @@ Reads `.sdc-cache/audit.jsonl` and `.sdc-cache/lineage.jsonl`, aggregates by age
 
 | Phase | New Dependencies | Optional |
 |---|---|---|
+| Phase 1.5 | None (existing deps) | — |
 | Phase 2 | `apscheduler>=3.10` | No (`aiosmtplib` optional for async email) |
 | Phase 3 | `fastapi>=0.115`, `uvicorn>=0.30` | Yes (`[dashboard]` extra) |
 | Phase 4 | None (stdlib + existing deps) | — |
@@ -814,12 +1109,59 @@ Features are ordered by user impact and implementation complexity:
 
 | Priority | Feature | Phase | Complexity | User Impact |
 |---|---|---|---|---|
-| 1 | Notification destinations | 2 | Low | High — immediate visibility |
-| 2 | CLI scheduler | 2 | Medium | High — enables automation |
-| 3 | Schema drift detection | 4 | Low | High — prevents silent failures |
-| 4 | Pipeline templates | 3 | Low | Medium — reduces onboarding friction |
-| 5 | Audit dashboard | 3 | Medium | Medium — visual audit trail |
-| 6 | Compliance reports | 4 | Medium | Medium — regulatory evidence |
-| 7 | Cross-datasource lineage | 4 | High | Medium — full traceability |
-| 8 | OpenClaw skill wrapper | 2 | Medium | Medium — reach into OpenClaw ecosystem |
-| 9 | ToolsetHub specification | 3 | High | Low initially — grows with community |
+| 1 | Private project enforcement | 1.5 | Low | Critical — security baseline |
+| 2 | HITL review gate | 1.5 | Medium | Critical — cost protection for SMB users |
+| 3 | Hybrid polling + download_package | 1.5 | Medium | High — completes the assembly lifecycle |
+| 4 | Notification destinations | 2 | Low | High — immediate visibility |
+| 5 | CLI scheduler | 2 | Medium | High — enables automation |
+| 6 | Schema drift detection | 4 | Low | High — prevents silent failures |
+| 7 | Pipeline templates | 3 | Low | Medium — reduces onboarding friction |
+| 8 | Audit dashboard | 3 | Medium | Medium — visual audit trail |
+| 9 | Compliance reports | 4 | Medium | Medium — regulatory evidence |
+| 10 | Cross-datasource lineage | 4 | High | Medium — full traceability |
+| 11 | OpenClaw skill wrapper | 2 | Medium | Medium — reach into OpenClaw ecosystem |
+| 12 | ToolsetHub specification | 3 | High | Low initially — grows with community |
+
+---
+
+## Strategic Note: The Component Flywheel
+
+SDC Agents SMB serves a dual purpose beyond direct revenue:
+
+1. **SMB users mint components** for their specific needs (billable via wallet)
+2. **Axius SDC monitors common patterns** across SMB usage
+3. **Curated components are promoted** to the public default library (free to reuse)
+4. **Future users reuse** curated components at $0 cost
+5. **The public catalog grows** organically from real-world usage, not top-down design
+
+This flywheel means the SMB tier is also a **component discovery engine**. Enterprise and Sovereign customers — where the real contract revenue lives — get a richer, battle-tested catalog out of the box. The more SMB users mint, the more valuable the ecosystem becomes for everyone.
+
+This is the "public good" framing in practice: open components validated by real usage, funded by the users who needed them first, free forever after curation. See the [FAIR Data Demo](https://axiussdc.substack.com/) for the pattern with 1,734 NIH CDEs.
+
+---
+
+## Future: Phase 5 — AppGen Integration (Separate PRD)
+
+The end-to-end SMB story does not stop at downloading a data model package. SDCStudio AppGen generates a complete, FOSS Docker/Podman application from any published data model — including Django CRUD interfaces, PostgreSQL, GraphDB (OWL 2 RL reasoning), SirixDB (temporal versioning), Keycloak (SSO/RBAC), REST API with API key auth, and bulk XML import. Multiple data model apps can be installed into a single project.
+
+The full zero-to-production pipeline:
+
+```
+SMB user has data (CSV, SQL, JSON, MongoDB)
+    ↓
+SDC Agents SMB: introspect → discover → [HITL review] → assemble → download
+    ↓
+SDCStudio AppGen: generate Docker/Podman app from the data model package
+    ↓
+docker compose up -d --build
+    ↓
+Running application (Django + PostgreSQL + GraphDB + SirixDB + Keycloak)
+    ↓
+Customize with AI coding assistants (Claude Code, Cursor, Copilot)
+```
+
+This crosses from "agent tooling" into "application generation and deployment" and warrants its own PRD. The key integration point is the `download_package` tool from Phase 1.5 — the ZIP package it downloads is the same artifact that AppGen consumes to generate the application.
+
+**Note:** The example above shows the Enterprise Stack (used in SDCStudio Sovereign deployments today). AppGen also produces a lightweight stack without GraphDB/SirixDB/Keycloak. The SMB edition would likely use the lightweight stack by default, with enterprise stack as an upgrade path. Axius SDC maintains a fork of SirixDB due to unresponsive upstream maintenance.
+
+Stage 1 (SDCStudio/SDC Agents) solves the hard problems AI struggles with: semantic modeling, standards compliance, knowledge graph architecture, multi-format consistency. Stage 2 (AI assistants) excels at what comes next: visual design, custom business logic, third-party integrations, workflow automation. The generated app is intentionally a semantic foundation with plain UI — ready for customization, not a finished product.
