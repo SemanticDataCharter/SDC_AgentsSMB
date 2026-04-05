@@ -43,8 +43,10 @@ dependencies = [
 sdc-agents = "sdc_agents.cli:main"
 
 [project.urls]
-Repository = "https://github.com/AXiUS-SDC/SDC_AgentsSMB"
-Issues = "https://github.com/AXiUS-SDC/SDC_AgentsSMB/issues"
+Repository = "https://github.com/SemanticDataCharter/SDC_AgentsSMB"
+Documentation = "https://github.com/SemanticDataCharter/SDC_AgentsSMB/blob/main/docs/ecosystem/ARCHITECTURE_OVERVIEW.md"
+Issues = "https://github.com/SemanticDataCharter/SDC_AgentsSMB/issues"
+Changelog = "https://github.com/SemanticDataCharter/SDC_AgentsSMB/blob/main/CHANGELOG.md"
 
 [project.optional-dependencies]
 dev = [
