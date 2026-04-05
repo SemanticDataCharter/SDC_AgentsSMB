@@ -1,4 +1,4 @@
-"""CLI entry point for sdc-agents (Personal Edition).
+"""CLI entry point for sdc-agents (SMB Edition).
 
 Provides subcommands for serving agents as MCP servers, inspecting
 audit logs, displaying configuration info, and validating config files.
@@ -63,7 +63,7 @@ def _parse_duration(duration: str) -> timedelta:
 )
 @click.pass_context
 def main(ctx: click.Context, config: str | None) -> None:
-    """SDC Agents Personal — purpose-scoped ADK agents for SDC4 data operations (local LLM)."""
+    """SDC Agents SMB — purpose-scoped ADK agents for SDC4 data operations (local LLM)."""
     ctx.ensure_object(dict)
     ctx.obj["config_path"] = config or "sdc-agents.yaml"
 

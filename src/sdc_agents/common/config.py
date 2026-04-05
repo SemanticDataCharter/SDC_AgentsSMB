@@ -1,4 +1,4 @@
-"""Configuration loading and validation for SDC Agents Personal.
+"""Configuration loading and validation for SDC Agents SMB.
 
 Loads YAML config with ${VAR} environment variable substitution.
 Fails closed: missing env vars raise KeyError immediately.
@@ -121,7 +121,7 @@ class KnowledgeConfig(BaseModel):
 
 
 class SDCAgentsConfig(BaseModel):
-    """Top-level configuration for SDC Agents Personal."""
+    """Top-level configuration for SDC Agents SMB."""
 
     sdcstudio: SDCStudioConfig = Field(default_factory=SDCStudioConfig)
     model: ModelConfig = Field(default_factory=ModelConfig)

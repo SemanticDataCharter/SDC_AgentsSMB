@@ -1,13 +1,14 @@
-# SDC Agents Personal
+# SDC Agents SMB
 
-Purpose-scoped ADK agents for SDC4 data operations — **Personal Edition**.
+Purpose-scoped ADK agents for SDC4 data operations — **SMB Edition**.
 
-Uses a local LLM via [Ollama](https://ollama.com) instead of a Google API key, while connecting to the commercial [SDCStudio](https://sdcstudio.example.com) SaaS backend for catalog, validation, and assembly APIs.
+Designed for personal and small/medium business usage. Uses a local LLM via [Ollama](https://ollama.com) instead of a Google API key, while connecting to the commercial [SDCStudio](https://sdcstudio.axius-sdc.com) SaaS backend for catalog, validation, and assembly APIs.
 
 ## Positioning
 
-| | **SDC Agents** | **SDC Agents Personal** | **SDC Agents Sovereign** |
+| | **SDC Agents** | **SDC Agents SMB** | **SDC Agents Sovereign** |
 |---|---|---|---|
+| Target | Enterprise | Personal / SMB | Air-gapped / Regulated |
 | Backend | SDCStudio SaaS | SDCStudio SaaS | SDCStudioSov (local) |
 | LLM | Gemini (Google API key) | Local via Ollama | Local via Ollama |
 | Google API Key | Required | **Not required** | Not required |
@@ -39,13 +40,13 @@ Uses a local LLM via [Ollama](https://ollama.com) instead of a Google API key, w
 ollama pull gemma4:26b
 ```
 
-### 2. Install SDC Agents Personal
+### 2. Install SDC Agents SMB
 
 ```bash
-pip install sdc-agents-personal
+pip install sdc-agents-smb
 
 # Optional extras:
-pip install sdc-agents-personal[knowledge]   # PDF, DOCX, ChromaDB support
+pip install sdc-agents-smb[knowledge]   # PDF, DOCX, ChromaDB support
 ```
 
 ### 3. Configure

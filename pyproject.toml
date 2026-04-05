@@ -3,9 +3,9 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [project]
-name = "sdc-agents-personal"
+name = "sdc-agents-smb"
 version = "0.1.0"
-description = "Purpose-scoped ADK agents for SDC4 data operations — Personal Edition (local LLM via Ollama)"
+description = "Purpose-scoped ADK agents for SDC4 data operations — SMB Edition (local LLM via Ollama)"
 readme = "README.md"
 license = "Apache-2.0"
 requires-python = ">=3.11"
@@ -15,7 +15,7 @@ authors = [
 maintainers = [
     { name = "Axius SDC, Inc.", email = "contact@axius-sdc.com" },
 ]
-keywords = ["sdc4", "semantic-data", "adk", "agents", "xml", "rdf", "sparql", "data-modeling", "ollama"]
+keywords = ["sdc4", "semantic-data", "adk", "agents", "xml", "rdf", "sparql", "data-modeling", "ollama", "smb"]
 classifiers = [
     "Development Status :: 3 - Alpha",
     "License :: OSI Approved :: Apache Software License",
@@ -42,8 +42,8 @@ dependencies = [
 sdc-agents = "sdc_agents.cli:main"
 
 [project.urls]
-Repository = "https://github.com/AXiUS-SDC/SDC_AgentsPersonal"
-Issues = "https://github.com/AXiUS-SDC/SDC_AgentsPersonal/issues"
+Repository = "https://github.com/AXiUS-SDC/SDC_AgentsSMB"
+Issues = "https://github.com/AXiUS-SDC/SDC_AgentsSMB/issues"
 
 [project.optional-dependencies]
 dev = [

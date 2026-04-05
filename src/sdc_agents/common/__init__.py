@@ -1,1 +1,1 @@
-"""Common infrastructure for SDC Agents Personal."""
+"""Common infrastructure for SDC Agents SMB."""

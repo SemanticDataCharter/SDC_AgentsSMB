@@ -1,4 +1,4 @@
-# SDC Agents Personal — Configuration
+# SDC Agents SMB — Configuration
 # Copy to sdc-agents.yaml and fill in values.
 # Environment variables can be used with ${VAR_NAME} syntax.
 
@@ -56,7 +56,7 @@ datasources:
   #   type: "sql"
   #   connection_string: "snowflake://${SNOWFLAKE_USER}:${SNOWFLAKE_PASSWORD}@${SNOWFLAKE_ACCOUNT}/${SNOWFLAKE_DATABASE}/${SNOWFLAKE_SCHEMA}?warehouse=${SNOWFLAKE_WAREHOUSE}"
 
-# Knowledge sources — customer contextual resources (pip install sdc-agents-personal[knowledge])
+# Knowledge sources — customer contextual resources (pip install sdc-agents-smb[knowledge])
 knowledge:
   vector_store: "chroma"
   vector_store_path: ".sdc-cache/knowledge/"
