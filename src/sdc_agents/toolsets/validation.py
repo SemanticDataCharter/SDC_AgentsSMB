@@ -359,4 +359,24 @@ class ValidationToolset(BaseToolset):
             outputs=result,
             start_time=start,
         )
+
+        # Send notification if channels are configured
+        if self._config.notifications:
+            from sdc_agents.common.notify import Notifier
+
+            notifier = Notifier(self._config)
+            status = "halted" if result.get("halted") else ("passed" if failed == 0 else "failed")
+            await notifier.send(
+                event="validation_batch_complete",
+                summary=f"Validation batch: {len(results)} processed, {failed} failed"
+                + (f" (halted: {result.get('halt_reason', '?')})" if result.get("halted") else ""),
+                details={
+                    "agent": "validation",
+                    "tool": "validate_batch",
+                    "total": len(results),
+                    "failed": failed,
+                    "status": status,
+                },
+            )
+
         return result

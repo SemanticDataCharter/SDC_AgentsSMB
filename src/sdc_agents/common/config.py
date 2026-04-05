@@ -128,6 +128,37 @@ class AssemblyConfig(BaseModel):
     poll_interval_seconds: int = 5
 
 
+class NotificationConfig(BaseModel):
+    """A notification destination for pipeline status updates."""
+
+    type: Literal["slack_webhook", "telegram", "email"]
+    webhook_url: Optional[str] = None       # Slack
+    bot_token: Optional[str] = None         # Telegram
+    chat_id: Optional[str] = None           # Telegram
+    smtp_host: Optional[str] = None         # Email
+    smtp_port: int = 587                    # Email
+    smtp_user: Optional[str] = None         # Email
+    smtp_password: Optional[str] = None     # Email
+    from_address: Optional[str] = None      # Email
+    to_addresses: list[str] = Field(default_factory=list)  # Email
+
+
+class PipelineStep(BaseModel):
+    """A single step in a scheduled pipeline."""
+
+    agent: str
+    tool: str
+    args: dict = Field(default_factory=dict)
+
+
+class ScheduleJobConfig(BaseModel):
+    """A scheduled pipeline job."""
+
+    cron: str
+    steps: list[PipelineStep]
+    notify_on: list[str] = Field(default_factory=lambda: ["error"])
+
+
 class SDCAgentsConfig(BaseModel):
     """Top-level configuration for SDC Agents SMB."""
 
@@ -140,6 +171,8 @@ class SDCAgentsConfig(BaseModel):
     output: OutputConfig = Field(default_factory=OutputConfig)
     destinations: Dict[str, DestinationConfig] = Field(default_factory=dict)
     knowledge: KnowledgeConfig = Field(default_factory=KnowledgeConfig)
+    notifications: Dict[str, NotificationConfig] = Field(default_factory=dict)
+    schedules: Dict[str, ScheduleJobConfig] = Field(default_factory=dict)
 
 
 def load_config(path: str | Path) -> SDCAgentsConfig:

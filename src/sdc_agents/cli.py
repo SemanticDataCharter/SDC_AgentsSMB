@@ -253,6 +253,8 @@ def info(ctx: click.Context) -> None:
     click.echo(f"Output dir  : {config.output.directory}")
     click.echo(f"Audit path  : {config.audit.path}")
     click.echo(f"HITL review : {'enabled' if config.assembly.review_before_publish else 'disabled'}")
+    click.echo(f"Notify chans: {len(config.notifications)}")
+    click.echo(f"Schedules   : {len(config.schedules)}")
     click.echo()
 
     # Agent inventory with tool counts
@@ -511,3 +513,105 @@ def assembly_reject(ctx: click.Context, name: str) -> None:
     manifest_path.write_text(json.dumps(manifest, indent=2, default=str))
 
     click.echo(f"Rejected: {name}")
+
+
+# ---------------------------------------------------------------------------
+# schedule
+# ---------------------------------------------------------------------------
+
+
+@main.group()
+def schedule() -> None:
+    """Manage scheduled pipeline jobs."""
+
+
+@schedule.command("list")
+@click.pass_context
+def schedule_list(ctx: click.Context) -> None:
+    """List configured schedule jobs with cron expressions."""
+    from sdc_agents.common.config import load_config
+
+    try:
+        config = load_config(ctx.obj["config_path"])
+    except (FileNotFoundError, KeyError) as exc:
+        raise click.ClickException(str(exc)) from exc
+
+    if not config.schedules:
+        click.echo("No schedules configured.")
+        return
+
+    click.echo(f"Schedules ({len(config.schedules)}):")
+    for name, job in config.schedules.items():
+        notify = ", ".join(job.notify_on)
+        click.echo(f"  {name:30s} cron={job.cron:20s} steps={len(job.steps)}  notify={notify}")
+        for i, step in enumerate(job.steps):
+            args_str = ", ".join(f"{k}={v}" for k, v in step.args.items()) if step.args else ""
+            click.echo(f"    {i}: {step.agent}.{step.tool}({args_str})")
+
+
+@schedule.command("run")
+@click.pass_context
+def schedule_run(ctx: click.Context) -> None:
+    """Start the scheduler (foreground process, Ctrl+C to stop)."""
+    import logging
+
+    from sdc_agents.common.config import load_config
+    from sdc_agents.common.scheduler import SchedulerRuntime
+
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s [%(name)s] %(levelname)s: %(message)s",
+    )
+
+    try:
+        config = load_config(ctx.obj["config_path"])
+    except (FileNotFoundError, KeyError) as exc:
+        raise click.ClickException(str(exc)) from exc
+
+    if not config.schedules:
+        raise click.ClickException(
+            "No schedules configured. Add a 'schedules' section to your config."
+        )
+
+    runtime = SchedulerRuntime(config)
+    runtime.start()
+
+
+@schedule.command("trigger")
+@click.argument("job_name")
+@click.pass_context
+def schedule_trigger(ctx: click.Context, job_name: str) -> None:
+    """Run a schedule job immediately (for testing)."""
+    from sdc_agents.common.config import load_config
+    from sdc_agents.common.scheduler import PipelineRunner
+
+    try:
+        config = load_config(ctx.obj["config_path"])
+    except (FileNotFoundError, KeyError) as exc:
+        raise click.ClickException(str(exc)) from exc
+
+    if job_name not in config.schedules:
+        available = ", ".join(sorted(config.schedules.keys())) or "(none)"
+        raise click.ClickException(
+            f"Unknown schedule '{job_name}'. Available: {available}"
+        )
+
+    job = config.schedules[job_name]
+    runner = PipelineRunner(config)
+
+    click.echo(f"Triggering '{job_name}' ({len(job.steps)} steps)...")
+    result = asyncio.run(runner.run_job(job_name, job))
+
+    status = result["status"]
+    completed = result["steps_completed"]
+    total = result["steps_total"]
+    duration = result["duration_ms"]
+
+    click.echo(f"  Status: {status}")
+    click.echo(f"  Steps:  {completed}/{total} completed")
+    click.echo(f"  Duration: {duration:.0f} ms")
+
+    if result["errors"]:
+        click.echo("  Errors:")
+        for err in result["errors"]:
+            click.echo(f"    step {err['step']} ({err['agent']}.{err['tool']}): {err['error']}")

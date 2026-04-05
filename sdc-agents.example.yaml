@@ -100,3 +100,49 @@ destinations:
     type: "filesystem"
     path: "./archive/{ct_id}/{instance_id}/"
     create_directories: true
+
+# --- Notification channels ---
+# Push status updates when pipelines complete or fail.
+# All credentials use ${VAR} substitution and are redacted in audit logs.
+# notifications:
+#   ops_slack:
+#     type: "slack_webhook"
+#     webhook_url: "${SLACK_WEBHOOK_URL}"
+#   admin_email:
+#     type: "email"
+#     smtp_host: "smtp.example.com"
+#     smtp_port: 587
+#     smtp_user: "${SMTP_USER}"
+#     smtp_password: "${SMTP_PASSWORD}"
+#     from_address: "sdc-agents@example.com"
+#     to_addresses:
+#       - "admin@example.com"
+#   alerts_telegram:
+#     type: "telegram"
+#     bot_token: "${TELEGRAM_BOT_TOKEN}"
+#     chat_id: "${TELEGRAM_CHAT_ID}"
+
+# --- Scheduled pipelines ---
+# Automate agent tool pipelines on cron schedules.
+# Run with: sdc-agents schedule run
+# schedules:
+#   monitor_lab_db:
+#     cron: "0 */6 * * *"  # Every 6 hours
+#     notify_on: ["error"]
+#     steps:
+#       - agent: introspect
+#         tool: introspect_sql_schema
+#         args:
+#           datasource_name: "lab_db"
+#
+#   nightly_validate_and_distribute:
+#     cron: "0 2 * * *"  # 2 AM daily
+#     notify_on: ["always"]
+#     steps:
+#       - agent: validation
+#         tool: validate_batch
+#         args:
+#           sign: true
+#           package: true
+#       - agent: distribution
+#         tool: distribute_batch

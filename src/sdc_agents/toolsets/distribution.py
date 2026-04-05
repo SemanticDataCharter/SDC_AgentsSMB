@@ -480,6 +480,25 @@ class DistributionToolset(BaseToolset):
             outputs=result,
             start_time=start,
         )
+
+        # Send notification if channels are configured
+        if self._config.notifications:
+            from sdc_agents.common.notify import Notifier
+
+            notifier = Notifier(self._config)
+            status = "completed" if failed == 0 else "completed_with_errors"
+            await notifier.send(
+                event="distribution_batch_complete",
+                summary=f"Distribution batch: {len(results)} packages, {failed} failed",
+                details={
+                    "agent": "distribution",
+                    "tool": "distribute_batch",
+                    "total": len(results),
+                    "failed": failed,
+                    "status": status,
+                },
+            )
+
         return result
 
     async def bootstrap_triplestore(
