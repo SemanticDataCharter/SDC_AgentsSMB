@@ -1,0 +1,28 @@
+{
+  "name": "sdc-data-integrity",
+  "version": "0.1.0",
+  "description": "SDC Agents SMB data integrity tools for OpenClaw — structured data introspection, validation, and distribution",
+  "author": "Axius SDC, Inc. <contact@axius-sdc.com>",
+  "license": "Apache-2.0",
+  "type": "module",
+  "main": "src/index.js",
+  "scripts": {
+    "build": "echo 'No build step required'",
+    "test": "node src/index.js --test"
+  },
+  "keywords": [
+    "openclaw",
+    "sdc",
+    "semantic-data",
+    "data-integrity",
+    "introspection",
+    "validation"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/SemanticDataCharter/SDC_AgentsSMB"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}

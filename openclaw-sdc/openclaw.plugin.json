@@ -1,0 +1,107 @@
+{
+  "name": "sdc-data-integrity",
+  "version": "0.1.0",
+  "description": "Structured data introspection, validation, and distribution via SDC Agents SMB. Introspect SQL, CSV, JSON, MongoDB, Notion, Google Sheets, and Airtable datasources. Validate against SDC4 semantic schemas. Download data model packages.",
+  "author": "Axius SDC, Inc.",
+  "homepage": "https://axius-sdc.com",
+  "repository": "https://github.com/SemanticDataCharter/SDC_AgentsSMB",
+  "tools": [
+    {
+      "name": "sdc_introspect_csv",
+      "description": "Analyze CSV file structure: column types (10 patterns), nullability, sample values, sidecar metadata. Returns standardized 13-field column format.",
+      "parameters": {
+        "datasource_name": {
+          "type": "string",
+          "description": "Name of a configured CSV datasource from sdc-agents.yaml"
+        }
+      }
+    },
+    {
+      "name": "sdc_introspect_sql",
+      "description": "Introspect SQL database schema: columns, types, primary keys, foreign keys, CHECK constraints, defaults. Read-only (SELECT only).",
+      "parameters": {
+        "datasource_name": {
+          "type": "string",
+          "description": "Name of a configured SQL datasource"
+        }
+      }
+    },
+    {
+      "name": "sdc_introspect_notion",
+      "description": "Introspect a Notion database: property types, relations, rollups, select options. Requires sdc-agents-smb[notion].",
+      "parameters": {
+        "datasource_name": {
+          "type": "string",
+          "description": "Name of a configured Notion datasource"
+        }
+      }
+    },
+    {
+      "name": "sdc_detect_drift",
+      "description": "Detect schema drift by comparing current datasource structure against cached previous introspection. Reports added/removed columns, type changes, nullability changes.",
+      "parameters": {
+        "datasource_name": {
+          "type": "string",
+          "description": "Name of a configured datasource (any type)"
+        }
+      }
+    },
+    {
+      "name": "sdc_validate_batch",
+      "description": "Validate all XML instances in the output directory against their SDC4 schemas via the VaaS API. Optionally sign and package.",
+      "parameters": {
+        "sign": {
+          "type": "boolean",
+          "description": "Sign valid instances (default: false)"
+        },
+        "package": {
+          "type": "boolean",
+          "description": "Generate artifact packages (default: true)"
+        }
+      }
+    },
+    {
+      "name": "sdc_distribute_batch",
+      "description": "Distribute all validated artifact packages to configured destinations (Fuseki, Neo4j, REST APIs, filesystem).",
+      "parameters": {}
+    },
+    {
+      "name": "sdc_download_package",
+      "description": "Download a published data model's artifact package (.zip) containing XSD, XML, JSON, JSON-LD, HTML, and SHA1.",
+      "parameters": {
+        "dm_ct_id": {
+          "type": "string",
+          "description": "The ct_id of the published data model"
+        }
+      }
+    },
+    {
+      "name": "sdc_audit_summary",
+      "description": "Show recent audit log entries with optional filtering by agent, tool, and time range.",
+      "parameters": {
+        "last": {
+          "type": "string",
+          "description": "Duration filter (e.g., '24h', '7d')"
+        },
+        "limit": {
+          "type": "integer",
+          "description": "Maximum records to return (default: 20)"
+        }
+      }
+    },
+    {
+      "name": "sdc_compliance_report",
+      "description": "Generate a compliance report from audit and lineage logs: data access summary, tool invocations, credential access, data flows, validation results.",
+      "parameters": {
+        "last": {
+          "type": "string",
+          "description": "Duration filter (e.g., '7d', '30d')"
+        },
+        "format": {
+          "type": "string",
+          "description": "Output format: json, markdown, or html (default: markdown)"
+        }
+      }
+    }
+  ]
+}
