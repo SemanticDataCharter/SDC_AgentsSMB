@@ -10,7 +10,9 @@ import csv
 import io
 import json
 import re
+import shutil
 import time
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
 
@@ -255,6 +257,7 @@ class IntrospectToolset(BaseToolset):
             FunctionTool(self.introspect_csv),
             FunctionTool(self.introspect_json),
             FunctionTool(self.introspect_mongodb),
+            FunctionTool(self.detect_schema_drift),
         ]
         if readonly_context and self.tool_filter:
             return [t for t in tools if self._is_tool_selected(t, readonly_context)]
@@ -865,4 +868,218 @@ class IntrospectToolset(BaseToolset):
             outputs=result,
             start_time=start,
         )
+        return result
+
+    async def detect_schema_drift(self, datasource_name: str) -> dict:
+        """Compare current datasource structure against cached introspection.
+
+        Performs a fresh introspection and diffs against the most recent
+        cached result. Reports added columns, removed columns, type changes,
+        nullability changes, enumeration changes, and relationship changes.
+
+        Works with all datasource types (SQL, CSV, JSON, MongoDB, and
+        future Notion, Sheets, Airtable) because it operates on the
+        standardized 13-field column format.
+
+        Args:
+            datasource_name: Name of a configured datasource (from config).
+
+        Returns:
+            Dict with datasource, drift_detected (bool), added_columns,
+            removed_columns, type_changes, nullability_changes,
+            enumeration_changes, relationship_changes, and
+            previous_introspection_timestamp.
+
+        Side Effect:
+            Saves previous introspection as {datasource_name}.prev.json.
+            Updates the cached introspection with the current result.
+            Logs via AuditLogger.
+        """
+        start = time.monotonic()
+        ds = self._get_datasource(datasource_name)
+        cache_path = self._cache.introspection_path(datasource_name)
+
+        # Load previous introspection (if exists)
+        previous: dict | None = None
+        previous_timestamp = ""
+        if self._cache.is_cached(cache_path):
+            previous = json.loads(cache_path.read_text())
+            # Preserve file modification time as timestamp
+            stat = cache_path.stat()
+            previous_timestamp = datetime.fromtimestamp(
+                stat.st_mtime, tz=timezone.utc
+            ).isoformat()
+            # Save backup
+            prev_path = cache_path.with_suffix(".prev.json")
+            shutil.copy2(cache_path, prev_path)
+
+        # Run fresh introspection based on datasource type
+        if ds.type == "sql":
+            current = await self.introspect_sql_schema(datasource_name)
+        elif ds.type == "csv":
+            current = await self.introspect_csv(datasource_name)
+        elif ds.type == "json":
+            current = await self.introspect_json(datasource_name)
+        elif ds.type == "mongodb":
+            current = await self.introspect_mongodb(datasource_name)
+        else:
+            raise ValueError(
+                f"Datasource type '{ds.type}' not yet supported for drift detection. "
+                f"Supported: sql, csv, json, mongodb"
+            )
+
+        # If no previous introspection, return baseline (no drift)
+        if previous is None:
+            result = {
+                "datasource": datasource_name,
+                "drift_detected": False,
+                "message": "No previous introspection cached. Current result saved as baseline.",
+                "added_columns": [],
+                "removed_columns": [],
+                "type_changes": [],
+                "nullability_changes": [],
+                "enumeration_changes": [],
+                "relationship_changes": [],
+                "previous_introspection_timestamp": "",
+                "column_count": len(current.get("columns", [])),
+            }
+            self._audit.log(
+                agent="introspect",
+                tool="detect_schema_drift",
+                inputs={"datasource_name": datasource_name},
+                outputs=result,
+                start_time=start,
+            )
+            return result
+
+        # Build column lookup maps by name
+        old_cols = {c["name"]: c for c in previous.get("columns", [])}
+        new_cols = {c["name"]: c for c in current.get("columns", [])}
+
+        old_names = set(old_cols.keys())
+        new_names = set(new_cols.keys())
+
+        # Detect added and removed columns
+        added = [
+            {"name": n, "data_type": new_cols[n].get("data_type", "?")}
+            for n in sorted(new_names - old_names)
+        ]
+        removed = [
+            {"name": n, "data_type": old_cols[n].get("data_type", "?")}
+            for n in sorted(old_names - new_names)
+        ]
+
+        # Detect changes in shared columns
+        type_changes = []
+        nullability_changes = []
+        enumeration_changes = []
+        relationship_changes = []
+
+        for name in sorted(old_names & new_names):
+            old = old_cols[name]
+            new = new_cols[name]
+
+            # Type change
+            old_type = old.get("data_type", "")
+            new_type = new.get("data_type", "")
+            if old_type != new_type:
+                change = {"name": name, "old_type": old_type, "new_type": new_type}
+                # Include native type info from metadata if available
+                old_meta = old.get("metadata", {})
+                new_meta = new.get("metadata", {})
+                for key in ("notion_property_type", "airtable_field_type", "sql_type", "bson_type"):
+                    if key in old_meta or key in new_meta:
+                        change[f"old_{key}"] = old_meta.get(key, "")
+                        change[f"new_{key}"] = new_meta.get(key, "")
+                type_changes.append(change)
+
+            # Nullability change
+            old_nullable = old.get("nullable")
+            new_nullable = new.get("nullable")
+            if old_nullable is not None and new_nullable is not None and old_nullable != new_nullable:
+                nullability_changes.append({
+                    "name": name,
+                    "old_nullable": old_nullable,
+                    "new_nullable": new_nullable,
+                })
+
+            # Enumeration change (select options added/removed — critical for Notion/Airtable)
+            old_enum = old.get("enumeration") or {}
+            new_enum = new.get("enumeration") or {}
+            if old_enum != new_enum:
+                old_keys = set(old_enum.keys()) if isinstance(old_enum, dict) else set()
+                new_keys = set(new_enum.keys()) if isinstance(new_enum, dict) else set()
+                enumeration_changes.append({
+                    "name": name,
+                    "added_options": sorted(new_keys - old_keys),
+                    "removed_options": sorted(old_keys - new_keys),
+                })
+
+            # Relationship change (linked records/relations — Notion, Airtable, SQL FK)
+            old_rel = old.get("relationships", "")
+            new_rel = new.get("relationships", "")
+            if old_rel != new_rel:
+                relationship_changes.append({
+                    "name": name,
+                    "old_relationships": old_rel,
+                    "new_relationships": new_rel,
+                })
+
+        drift_detected = bool(
+            added or removed or type_changes or nullability_changes
+            or enumeration_changes or relationship_changes
+        )
+
+        result = {
+            "datasource": datasource_name,
+            "drift_detected": drift_detected,
+            "added_columns": added,
+            "removed_columns": removed,
+            "type_changes": type_changes,
+            "nullability_changes": nullability_changes,
+            "enumeration_changes": enumeration_changes,
+            "relationship_changes": relationship_changes,
+            "previous_introspection_timestamp": previous_timestamp,
+            "column_count": len(new_cols),
+        }
+
+        self._audit.log(
+            agent="introspect",
+            tool="detect_schema_drift",
+            inputs={"datasource_name": datasource_name},
+            outputs=result,
+            start_time=start,
+        )
+
+        # Send notification if drift detected and channels configured
+        if drift_detected and self._config.notifications:
+            from sdc_agents.common.notify import Notifier
+
+            changes = []
+            if added:
+                changes.append(f"{len(added)} added")
+            if removed:
+                changes.append(f"{len(removed)} removed")
+            if type_changes:
+                changes.append(f"{len(type_changes)} type changes")
+            if nullability_changes:
+                changes.append(f"{len(nullability_changes)} nullability changes")
+            if enumeration_changes:
+                changes.append(f"{len(enumeration_changes)} enum changes")
+            if relationship_changes:
+                changes.append(f"{len(relationship_changes)} relationship changes")
+
+            notifier = Notifier(self._config)
+            await notifier.send(
+                event="schema_drift_detected",
+                summary=f"Schema drift in '{datasource_name}': {', '.join(changes)}",
+                details={
+                    "agent": "introspect",
+                    "tool": "detect_schema_drift",
+                    "datasource": datasource_name,
+                    "drift_detected": True,
+                    "changes": changes,
+                },
+            )
+
         return result

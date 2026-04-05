@@ -264,7 +264,7 @@ def info(ctx: click.Context) -> None:
         "catalog": 7,
         "distribution": 5,
         "generator": 3,
-        "introspect": 5,
+        "introspect": 6,
         "knowledge": 3,
         "mapping": 3,
         "validation": 3,
