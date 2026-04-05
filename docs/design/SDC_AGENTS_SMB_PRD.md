@@ -830,6 +830,162 @@ sdc-agents audit serve --port 8080
 - `src/sdc_agents/cli.py` — add `audit serve` subcommand
 - `pyproject.toml` — add `[dashboard]` optional dependency
 
+### 3.4 SMB-Native Datasource Introspection
+
+**Problem**: The current Introspect Agent handles SQL, CSV, JSON, and MongoDB — datasources that developers use. SMBs keep their operational data in tools like Notion, Google Sheets, and Airtable. Expecting SMB users to export CSVs from their business tools before running introspection adds friction and loses metadata (field types, relations, views, formulas) that the native APIs provide.
+
+**Solution**: Add introspection tools for SMB-native datasources that produce the same 13-field standardized column format used by existing tools. The downstream pipeline (Mapping → Assembly → Validation → Distribution) requires no changes — it sees the same structure regardless of whether the source was PostgreSQL or a Notion database.
+
+#### New Tools
+
+| Tool | Data Source | API | Extracts |
+|---|---|---|---|
+| `introspect_notion` | Notion databases | Notion API | Properties (title, rich_text, number, select, multi_select, date, relation, rollup, formula, etc.), property configs, relation targets |
+| `introspect_sheets` | Google Sheets | Google Sheets API v4 | Headers, column types (inferred from cell values), named ranges, sheet metadata |
+| `introspect_airtable` | Airtable bases | Airtable Web API | Fields (single_line_text, number, currency, date, checkbox, linked_record, formula, lookup, etc.), field configs, linked table targets |
+
+#### Standardized Output
+
+All three tools produce the same `_make_column()` format:
+
+```json
+{
+  "name": "Client Email",
+  "data_type": "email",
+  "sample_values": ["alice@example.com", "bob@corp.co"],
+  "description": "Primary contact email (from Notion 'Email' property)",
+  "enumeration": null,
+  "units": "",
+  "nullable": true,
+  "constraints": {},
+  "range_values": "",
+  "relationships": "linked to Projects database via 'Client' relation",
+  "business_rules": "",
+  "examples": "",
+  "metadata": {"source_type": "notion", "notion_property_type": "email"}
+}
+```
+
+The `metadata` field carries source-specific type information for downstream tools that need it, but the standardized fields are sufficient for the Mapping Agent.
+
+#### Type Mapping
+
+**Notion → SDC Inferred Types:**
+
+| Notion Property | Inferred Type |
+|---|---|
+| title, rich_text, url, email, phone_number | string, email, URL (via `_infer_type`) |
+| number | integer or decimal (from format config) |
+| checkbox | boolean |
+| date | date or datetime |
+| select, status | string (with enumeration from options) |
+| multi_select | array |
+| relation | string (with relationships metadata) |
+| formula, rollup | inferred from result type |
+
+**Google Sheets → SDC Inferred Types:**
+
+Sheets cells are untyped — use the existing `_infer_type()` function on cell values (same approach as CSV introspection). Sheet metadata provides column headers and named ranges.
+
+**Airtable → SDC Inferred Types:**
+
+| Airtable Field | Inferred Type |
+|---|---|
+| singleLineText, multilineText, richText, url, email | string, email, URL |
+| number, currency, percent | integer or decimal |
+| checkbox | boolean |
+| date, dateTime, createdTime, lastModifiedTime | date or datetime |
+| singleSelect, singleCollaborator | string (with enumeration) |
+| multipleSelects, multipleCollaborators | array |
+| linkedRecord | string (with relationships) |
+| formula, lookup, count | inferred from result type |
+
+#### Config Schema
+
+New datasource types added to `DatasourceConfig.type` Literal:
+
+```python
+type: Literal["sql", "csv", "json", "mongodb", "notion", "sheets", "airtable"]
+```
+
+New config fields:
+
+```python
+# Notion
+notion_token: Optional[str] = None       # Integration token
+notion_database_id: Optional[str] = None  # Database ID
+
+# Google Sheets
+sheets_credentials: Optional[str] = None  # Path to service account JSON
+spreadsheet_id: Optional[str] = None      # Spreadsheet ID
+sheet_name: Optional[str] = None          # Specific sheet (default: first)
+
+# Airtable
+airtable_token: Optional[str] = None     # Personal access token
+airtable_base_id: Optional[str] = None   # Base ID
+airtable_table: Optional[str] = None     # Table name or ID
+```
+
+#### YAML Example
+
+```yaml
+datasources:
+  client_crm:
+    type: "notion"
+    notion_token: "${NOTION_TOKEN}"
+    notion_database_id: "abc123def456"
+
+  financials:
+    type: "sheets"
+    sheets_credentials: "./credentials/sheets-sa.json"
+    spreadsheet_id: "1BxiMVs0XRA5nFMdKvBdBZjgmUUqptlbs74OgVE2upms"
+    sheet_name: "Q1 Revenue"
+
+  inventory:
+    type: "airtable"
+    airtable_token: "${AIRTABLE_TOKEN}"
+    airtable_base_id: "appXXXXXXXXXX"
+    airtable_table: "Products"
+```
+
+#### Dependencies
+
+Optional extras — not required for core functionality:
+
+```toml
+[project.optional-dependencies]
+notion = ["notion-client>=2.2"]
+sheets = ["google-api-python-client>=2.0", "google-auth>=2.0"]
+airtable = ["pyairtable>=2.3"]
+```
+
+Install individually: `pip install sdc-agents-smb[notion]`
+
+Or all SMB sources: `pip install sdc-agents-smb[notion,sheets,airtable]`
+
+#### Security
+
+- Each SMB datasource tool has **datasource access only** — no network access beyond the specific API endpoint needed for that datasource (same isolation as SQL/MongoDB)
+- API tokens use existing `${VAR}` substitution — redacted in audit logs
+- All tools are **read-only** — they query schemas and sample data, never modify the source
+- Google Sheets credentials use service account JSON (no OAuth browser flow)
+
+#### Pipeline Templates (Phase 3.2 Integration)
+
+New bundled templates for SMB scenarios:
+
+- **notion-crm** — Notion CRM database → introspect → discover components → validate → distribute
+- **sheets-financial** — Google Sheets financial data → introspect → map → generate → validate
+- **airtable-inventory** — Airtable product inventory → introspect → discover → assemble
+
+#### Files Modified/Created
+
+- `src/sdc_agents/toolsets/introspect.py` — add `introspect_notion`, `introspect_sheets`, `introspect_airtable`
+- `src/sdc_agents/common/config.py` — extend `DatasourceConfig` with new types and fields
+- `src/sdc_agents/agents/introspect.py` — update instruction to mention SMB datasources
+- `pyproject.toml` — add `[notion]`, `[sheets]`, `[airtable]` optional extras
+- `sdc-agents.example.yaml` — add example SMB datasource configs
+
 ---
 
 ## Phase 4 — Differentiation
@@ -1084,6 +1240,7 @@ Reads `.sdc-cache/audit.jsonl` and `.sdc-cache/lineage.jsonl`, aggregates by age
 │  │                                                                   │  │
 │  │  SDCStudio SaaS ◀──── Catalog / Validation / Assembly Agents     │  │
 │  │  Ollama (local) ◀──── All agents (LLM inference)                 │  │
+│  │  Notion / Sheets / Airtable ◀──── Introspect Agent (SMB sources) │  │
 │  │  OpenClaw ◀──── openclaw-sdc skill (MCP bridge)                  │  │
 │  │  ToolsetHub ◀──── Community toolsets (security-scoped plugins)   │  │
 │  └───────────────────────────────────────────────────────────────────┘  │
@@ -1099,6 +1256,7 @@ Reads `.sdc-cache/audit.jsonl` and `.sdc-cache/lineage.jsonl`, aggregates by age
 | Phase 1.5 | None (existing deps) | — |
 | Phase 2 | `apscheduler>=3.10` | No (`aiosmtplib` optional for async email) |
 | Phase 3 | `fastapi>=0.115`, `uvicorn>=0.30` | Yes (`[dashboard]` extra) |
+| Phase 3.4 | `notion-client>=2.2`, `google-api-python-client>=2.0`, `pyairtable>=2.3` | Yes (`[notion]`, `[sheets]`, `[airtable]` extras) |
 | Phase 4 | None (stdlib + existing deps) | — |
 
 ---
@@ -1116,11 +1274,12 @@ Features are ordered by user impact and implementation complexity:
 | 5 | CLI scheduler | 2 | Medium | High — enables automation |
 | 6 | Schema drift detection | 4 | Low | High — prevents silent failures |
 | 7 | Pipeline templates | 3 | Low | Medium — reduces onboarding friction |
-| 8 | Audit dashboard | 3 | Medium | Medium — visual audit trail |
-| 9 | Compliance reports | 4 | Medium | Medium — regulatory evidence |
-| 10 | Cross-datasource lineage | 4 | High | Medium — full traceability |
-| 11 | OpenClaw skill wrapper | 2 | Medium | Medium — reach into OpenClaw ecosystem |
-| 12 | ToolsetHub specification | 3 | High | Low initially — grows with community |
+| 8 | SMB-native datasources (Notion, Sheets, Airtable) | 3.4 | Medium | High — meets SMBs where their data lives |
+| 9 | Audit dashboard | 3 | Medium | Medium — visual audit trail |
+| 10 | Compliance reports | 4 | Medium | Medium — regulatory evidence |
+| 11 | Cross-datasource lineage | 4 | High | Medium — full traceability |
+| 12 | OpenClaw skill wrapper | 2 | Medium | Medium — reach into OpenClaw ecosystem |
+| 13 | ToolsetHub specification | 3 | High | Low initially — grows with community |
 
 ---
 
@@ -1147,7 +1306,7 @@ The end-to-end SMB story does not stop at downloading a data model package. SDCS
 The full zero-to-production pipeline:
 
 ```
-SMB user has data (CSV, SQL, JSON, MongoDB)
+SMB user has data (CSV, SQL, JSON, MongoDB, Notion, Google Sheets, Airtable)
     ↓
 SDC Agents SMB: introspect → discover → [HITL review] → assemble → download
     ↓
