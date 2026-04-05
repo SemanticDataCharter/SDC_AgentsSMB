@@ -1,0 +1,11 @@
+name: "Schema Drift Monitor"
+description: "Run schema drift detection on a datasource. Sends notifications if drift is detected."
+parameters:
+  - name: datasource
+    description: "Name of a configured datasource (any type)"
+    required: true
+steps:
+  - agent: introspect
+    tool: detect_schema_drift
+    args:
+      datasource_name: "{{ datasource }}"

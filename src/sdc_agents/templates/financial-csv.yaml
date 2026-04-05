@@ -1,0 +1,22 @@
+name: "Financial Reporting CSV to SDC4"
+description: "Introspect a financial CSV, discover matching catalog components, validate and archive artifacts to filesystem."
+parameters:
+  - name: datasource
+    description: "Name of a configured CSV datasource"
+    required: true
+steps:
+  - agent: introspect
+    tool: introspect_csv
+    args:
+      datasource_name: "{{ datasource }}"
+  - agent: assembly
+    tool: discover_components
+    args:
+      datasource_name: "{{ datasource }}"
+  - agent: validation
+    tool: validate_batch
+    args:
+      sign: true
+      package: true
+  - agent: distribution
+    tool: distribute_batch

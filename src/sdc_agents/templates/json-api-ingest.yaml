@@ -1,0 +1,22 @@
+name: "JSON API Ingest to SDC4"
+description: "Introspect a JSON datasource (with optional JSONPath extraction), discover matching catalog components, validate and distribute."
+parameters:
+  - name: datasource
+    description: "Name of a configured JSON datasource"
+    required: true
+steps:
+  - agent: introspect
+    tool: introspect_json
+    args:
+      datasource_name: "{{ datasource }}"
+  - agent: assembly
+    tool: discover_components
+    args:
+      datasource_name: "{{ datasource }}"
+  - agent: validation
+    tool: validate_batch
+    args:
+      sign: true
+      package: true
+  - agent: distribution
+    tool: distribute_batch

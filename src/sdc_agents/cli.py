@@ -229,6 +229,41 @@ def audit_show(
             click.echo(f"  inputs    : {inputs}")
 
 
+@audit.command("serve")
+@click.option("--port", default=8080, show_default=True, help="Port for the dashboard server.")
+@click.option(
+    "--audit-path", default=None, type=click.Path(), help="Audit log path (overrides config)."
+)
+@click.pass_context
+def audit_serve(ctx: click.Context, port: int, audit_path: str | None) -> None:
+    """Start the audit dashboard web UI."""
+    try:
+        import uvicorn
+    except ImportError:
+        raise click.ClickException(
+            "uvicorn is required for the audit dashboard. "
+            "Install with: pip install sdc-agents-smb[dashboard]"
+        )
+
+    from sdc_agents import dashboard
+
+    # Resolve audit path
+    if audit_path:
+        dashboard._audit_path = audit_path
+    else:
+        from sdc_agents.common.config import load_config
+
+        try:
+            config = load_config(ctx.obj["config_path"])
+            dashboard._audit_path = config.audit.path
+        except (FileNotFoundError, KeyError):
+            dashboard._audit_path = ".sdc-cache/audit.jsonl"
+
+    click.echo(f"Audit dashboard: http://localhost:{port}")
+    click.echo(f"Reading: {dashboard._audit_path}")
+    uvicorn.run(dashboard.app, host="127.0.0.1", port=port, log_level="warning")
+
+
 # ---------------------------------------------------------------------------
 # info
 # ---------------------------------------------------------------------------
@@ -610,6 +645,105 @@ def schedule_trigger(ctx: click.Context, job_name: str) -> None:
     click.echo(f"  Status: {status}")
     click.echo(f"  Steps:  {completed}/{total} completed")
     click.echo(f"  Duration: {duration:.0f} ms")
+
+    if result["errors"]:
+        click.echo("  Errors:")
+        for err in result["errors"]:
+            click.echo(f"    step {err['step']} ({err['agent']}.{err['tool']}): {err['error']}")
+
+
+# ---------------------------------------------------------------------------
+# pipeline
+# ---------------------------------------------------------------------------
+
+
+@main.group()
+def pipeline() -> None:
+    """Run pre-built pipeline templates."""
+
+
+@pipeline.command("list")
+def pipeline_list() -> None:
+    """List available pipeline templates."""
+    from sdc_agents.common.pipeline import list_templates
+
+    templates = list_templates()
+    if not templates:
+        click.echo("No pipeline templates found.")
+        return
+
+    click.echo(f"Pipeline templates ({len(templates)}):")
+    for t in templates:
+        params = ", ".join(t["parameters"]) if t["parameters"] else "(none)"
+        click.echo(f"  {t['name']:24s} {t['step_count']} steps  params: {params}")
+        if t["description"]:
+            click.echo(f"    {t['description']}")
+
+
+@pipeline.command("show")
+@click.argument("name")
+def pipeline_show(name: str) -> None:
+    """Show details of a pipeline template."""
+    from sdc_agents.common.pipeline import load_template
+
+    try:
+        template = load_template(name)
+    except FileNotFoundError as exc:
+        raise click.ClickException(str(exc)) from exc
+
+    click.echo(f"Pipeline: {template.get('name', name)}")
+    click.echo(f"  {template.get('description', '')}")
+    click.echo()
+
+    params = template.get("parameters", [])
+    if params:
+        click.echo("Parameters:")
+        for p in params:
+            req = " (required)" if p.get("required") else ""
+            click.echo(f"  --{p['name']:20s} {p.get('description', '')}{req}")
+        click.echo()
+
+    click.echo("Steps:")
+    for i, step in enumerate(template.get("steps", [])):
+        args_str = ", ".join(f"{k}={v}" for k, v in step.get("args", {}).items())
+        click.echo(f"  {i}: {step['agent']}.{step['tool']}({args_str})")
+
+
+@pipeline.command("run")
+@click.argument("name")
+@click.option("--param", "-p", multiple=True, help="Parameter as key=value (repeatable).")
+@click.pass_context
+def pipeline_run(ctx: click.Context, name: str, param: tuple[str, ...]) -> None:
+    """Run a pipeline template with the given parameters."""
+    from sdc_agents.common.config import load_config
+    from sdc_agents.common.pipeline import build_job_from_template
+    from sdc_agents.common.scheduler import PipelineRunner
+
+    # Parse key=value params
+    params: dict[str, str] = {}
+    for p in param:
+        if "=" not in p:
+            raise click.ClickException(f"Invalid parameter format: '{p}'. Use key=value.")
+        key, value = p.split("=", 1)
+        params[key] = value
+
+    try:
+        config = load_config(ctx.obj["config_path"])
+    except (FileNotFoundError, KeyError) as exc:
+        raise click.ClickException(str(exc)) from exc
+
+    try:
+        job = build_job_from_template(name, params)
+    except (FileNotFoundError, ValueError) as exc:
+        raise click.ClickException(str(exc)) from exc
+
+    click.echo(f"Running pipeline '{name}' ({len(job.steps)} steps)...")
+    runner = PipelineRunner(config)
+    result = asyncio.run(runner.run_job(f"pipeline:{name}", job))
+
+    click.echo(f"  Status: {result['status']}")
+    click.echo(f"  Steps:  {result['steps_completed']}/{result['steps_total']} completed")
+    click.echo(f"  Duration: {result['duration_ms']:.0f} ms")
 
     if result["errors"]:
         click.echo("  Errors:")
