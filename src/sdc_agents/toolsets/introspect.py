@@ -19,6 +19,11 @@ from typing import Optional
 from google.adk.tools import FunctionTool
 from google.adk.tools.base_toolset import BaseToolset
 
+from sdc_agents.common.annotations import (
+    AnnotationStore,
+    auto_annotate_introspection,
+    merge_annotations_into_result,
+)
 from sdc_agents.common.audit import AuditLogger
 from sdc_agents.common.cache import CacheManager
 from sdc_agents.common.config import SDCAgentsConfig
@@ -249,6 +254,7 @@ class IntrospectToolset(BaseToolset):
         self._cache = CacheManager(config.cache.root)
         self._cache.ensure_dirs()
         self._audit = AuditLogger(config.audit.path, config.audit.log_level)
+        self._annotations = AnnotationStore(config.cache.root)
         self._toolset_loader = ToolsetLoader(config)
 
     async def get_tools(self, readonly_context=None) -> list:
@@ -278,6 +284,16 @@ class IntrospectToolset(BaseToolset):
         if readonly_context and self.tool_filter:
             return [t for t in tools if self._is_tool_selected(t, readonly_context)]
         return tools
+
+    def _post_introspect(self, datasource_name: str, result: dict) -> dict:
+        """Run auto-annotation and merge existing annotations into result.
+
+        Called after every introspection tool to detect anomalies and
+        append stored annotations to column metadata.
+        """
+        auto_annotate_introspection(self._annotations, datasource_name, result)
+        merge_annotations_into_result(self._annotations, datasource_name, result)
+        return result
 
     def _get_datasource(self, name: str):
         """Look up a datasource by name from config. Raises KeyError if unknown."""
@@ -429,7 +445,7 @@ class IntrospectToolset(BaseToolset):
             outputs=result,
             start_time=start,
         )
-        return result
+        return self._post_introspect(datasource_name, result)
 
     async def introspect_json(
         self,
@@ -556,7 +572,7 @@ class IntrospectToolset(BaseToolset):
             outputs=result,
             start_time=start,
         )
-        return result
+        return self._post_introspect(datasource_name, result)
 
     async def introspect_mongodb(
         self,
@@ -734,7 +750,7 @@ class IntrospectToolset(BaseToolset):
             outputs=result,
             start_time=start,
         )
-        return result
+        return self._post_introspect(datasource_name, result)
 
     async def introspect_sql_schema(
         self,
@@ -884,7 +900,7 @@ class IntrospectToolset(BaseToolset):
             outputs=result,
             start_time=start,
         )
-        return result
+        return self._post_introspect(datasource_name, result)
 
     async def detect_schema_drift(self, datasource_name: str) -> dict:
         """Compare current datasource structure against cached introspection.

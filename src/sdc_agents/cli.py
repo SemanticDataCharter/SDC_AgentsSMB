@@ -927,3 +927,112 @@ def toolset_info(ctx: click.Context, name: str) -> None:
         click.echo(f"  Dependencies: {', '.join(deps)}")
         extra = found.get("install_extra", name)
         click.echo(f"  Install: pip install sdc-agents-smb[{extra}]")
+
+
+# ---------------------------------------------------------------------------
+# annotate
+# ---------------------------------------------------------------------------
+
+
+@main.group()
+def annotate() -> None:
+    """Manage data annotations (learned datasource quirks)."""
+
+
+@annotate.command("add")
+@click.argument("datasource")
+@click.argument("column")
+@click.argument("note")
+@click.option("--category", default="user_note",
+              help="Annotation category (default: user_note).")
+@click.pass_context
+def annotate_add(ctx: click.Context, datasource: str, column: str, note: str, category: str) -> None:
+    """Add a manual annotation for a datasource column."""
+    from sdc_agents.common.annotations import AnnotationStore
+    from sdc_agents.common.config import load_config
+
+    try:
+        config = load_config(ctx.obj["config_path"])
+        cache_root = config.cache.root
+    except (FileNotFoundError, KeyError):
+        cache_root = ".sdc-cache"
+
+    store = AnnotationStore(cache_root)
+    record = store.add(datasource, column, category, note, source="user")
+    click.echo(f"Annotation added: {datasource}.{column} [{category}]")
+    click.echo(f"  {note}")
+
+
+@annotate.command("list")
+@click.argument("datasource")
+@click.option("--column", default=None, help="Filter by column name.")
+@click.pass_context
+def annotate_list(ctx: click.Context, datasource: str, column: str | None) -> None:
+    """List annotations for a datasource."""
+    from sdc_agents.common.annotations import AnnotationStore
+    from sdc_agents.common.config import load_config
+
+    try:
+        config = load_config(ctx.obj["config_path"])
+        cache_root = config.cache.root
+    except (FileNotFoundError, KeyError):
+        cache_root = ".sdc-cache"
+
+    store = AnnotationStore(cache_root)
+    records = store.get(datasource, column=column)
+
+    if not records:
+        click.echo(f"No annotations for '{datasource}'.")
+        return
+
+    click.echo(f"Annotations for '{datasource}' ({len(records)}):")
+    for r in records:
+        src = "agent" if r["source"] == "agent" else "user"
+        click.echo(f"  [{r['category']}] {r['column']} ({src})")
+        click.echo(f"    {r['message']}")
+        click.echo(f"    {r['timestamp']}")
+
+
+@annotate.command("list-all")
+@click.pass_context
+def annotate_list_all(ctx: click.Context) -> None:
+    """List all datasources with annotations."""
+    from sdc_agents.common.annotations import AnnotationStore
+    from sdc_agents.common.config import load_config
+
+    try:
+        config = load_config(ctx.obj["config_path"])
+        cache_root = config.cache.root
+    except (FileNotFoundError, KeyError):
+        cache_root = ".sdc-cache"
+
+    store = AnnotationStore(cache_root)
+    datasources = store.list_datasources()
+
+    if not datasources:
+        click.echo("No annotations stored.")
+        return
+
+    click.echo(f"Datasources with annotations ({len(datasources)}):")
+    for ds in datasources:
+        count = len(store.get(ds))
+        click.echo(f"  {ds:30s} {count} annotation(s)")
+
+
+@annotate.command("clear")
+@click.argument("datasource")
+@click.pass_context
+def annotate_clear(ctx: click.Context, datasource: str) -> None:
+    """Clear all annotations for a datasource."""
+    from sdc_agents.common.annotations import AnnotationStore
+    from sdc_agents.common.config import load_config
+
+    try:
+        config = load_config(ctx.obj["config_path"])
+        cache_root = config.cache.root
+    except (FileNotFoundError, KeyError):
+        cache_root = ".sdc-cache"
+
+    store = AnnotationStore(cache_root)
+    count = store.clear(datasource)
+    click.echo(f"Cleared {count} annotation(s) for '{datasource}'.")
