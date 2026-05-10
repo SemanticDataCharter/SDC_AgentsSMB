@@ -11,7 +11,6 @@ from __future__ import annotations
 
 import json
 import time
-from typing import Optional
 
 from google.adk.tools import FunctionTool
 from google.adk.tools.base_toolset import BaseToolset
@@ -106,9 +105,7 @@ class AirtableIntrospectToolset(BaseToolset):
     async def get_tools(self) -> list[FunctionTool]:
         return [FunctionTool(self.introspect_airtable)]
 
-    async def introspect_airtable(
-        self, datasource_name: str, max_rows: int = 100
-    ) -> dict:
+    async def introspect_airtable(self, datasource_name: str, max_rows: int = 100) -> dict:
         """Introspect an Airtable table to discover field structure and types.
 
         Queries the Airtable API for table schema (fields) and sample
@@ -138,9 +135,7 @@ class AirtableIntrospectToolset(BaseToolset):
 
         ds = self._config.datasources[datasource_name]
         if ds.type != "airtable":
-            raise ValueError(
-                f"Datasource '{datasource_name}' is type '{ds.type}', not 'airtable'"
-            )
+            raise ValueError(f"Datasource '{datasource_name}' is type '{ds.type}', not 'airtable'")
 
         if not ds.airtable_token or not ds.airtable_base_id or not ds.airtable_table:
             raise ValueError(
@@ -180,7 +175,9 @@ class AirtableIntrospectToolset(BaseToolset):
                 if field_type == "singleSelect" and hasattr(field, "options"):
                     opts = field.options
                     if hasattr(opts, "choices") and opts.choices:
-                        enumeration = {c.name: c.color if hasattr(c, "color") else "" for c in opts.choices}
+                        enumeration = {
+                            c.name: c.color if hasattr(c, "color") else "" for c in opts.choices
+                        }
 
                 # Extract relationships for linked records
                 relationships = ""
@@ -201,7 +198,11 @@ class AirtableIntrospectToolset(BaseToolset):
                         name=field_name,
                         data_type=inferred_type,
                         sample_values=sample_values,
-                        description=field.description if hasattr(field, "description") and field.description else f"Airtable {field_type} field",
+                        description=(
+                            field.description
+                            if hasattr(field, "description") and field.description
+                            else f"Airtable {field_type} field"
+                        ),
                         enumeration=enumeration,
                         nullable=True,
                         relationships=relationships,
@@ -223,6 +224,7 @@ class AirtableIntrospectToolset(BaseToolset):
                 for key, values in all_keys.items():
                     str_values = [str(v) for v in values if v is not None]
                     from sdc_agents.toolsets.introspect import _infer_type
+
                     inferred = _infer_type(str_values) if str_values else "string"
 
                     columns.append(

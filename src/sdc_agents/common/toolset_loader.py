@@ -13,10 +13,7 @@ Discovery sources (in order):
 from __future__ import annotations
 
 import importlib
-import json
 import logging
-from pathlib import Path
-from typing import Optional
 
 from sdc_agents.common.config import SDCAgentsConfig
 
@@ -38,9 +35,7 @@ _BUILTIN_TOOLSETS: dict[str, dict] = {
             "file_write": False,
             "audit_compliant": True,
         },
-        "tools": [
-            {"name": "introspect_notion", "description": "Introspect a Notion database"}
-        ],
+        "tools": [{"name": "introspect_notion", "description": "Introspect a Notion database"}],
         "dependencies": ["notion-client>=2.2"],
         "install_extra": "notion",
     },
@@ -109,7 +104,7 @@ class ToolsetLoader:
             entry = {**manifest}
             try:
                 mod = importlib.import_module(manifest["module"])
-                cls = getattr(mod, manifest["toolset_class"])
+                getattr(mod, manifest["toolset_class"])  # raises AttributeError if missing
                 entry["available"] = True
                 entry["status"] = "installed"
             except (ImportError, AttributeError):

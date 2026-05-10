@@ -10,13 +10,9 @@ Output formats: JSON, Markdown, HTML.
 from __future__ import annotations
 
 import json
-import time
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from typing import Literal, Optional
-
-from sdc_agents.common.audit import AuditLogger
-from sdc_agents.common.lineage import LineageLogger
+from typing import Literal
 
 
 class ComplianceReporter:
@@ -33,8 +29,8 @@ class ComplianceReporter:
     def generate(
         self,
         *,
-        last_hours: Optional[int] = None,
-        last_days: Optional[int] = None,
+        last_hours: int | None = None,
+        last_days: int | None = None,
         output_format: Literal["json", "markdown", "html"] = "json",
     ) -> str:
         """Generate a compliance report.
@@ -64,7 +60,7 @@ class ComplianceReporter:
             return self._render_html(report)
         return json.dumps(report, indent=2, default=str)
 
-    def _read_audit(self, cutoff: Optional[datetime]) -> list[dict]:
+    def _read_audit(self, cutoff: datetime | None) -> list[dict]:
         """Read and filter audit records."""
         if not self._audit_path.exists():
             return []
@@ -90,7 +86,7 @@ class ComplianceReporter:
             records.append(record)
         return records
 
-    def _read_lineage(self, cutoff: Optional[datetime]) -> list[dict]:
+    def _read_lineage(self, cutoff: datetime | None) -> list[dict]:
         """Read and filter lineage records."""
         if not self._lineage_path.exists():
             return []
@@ -120,7 +116,7 @@ class ComplianceReporter:
         self,
         audit_records: list[dict],
         lineage_records: list[dict],
-        cutoff: Optional[datetime],
+        cutoff: datetime | None,
     ) -> dict:
         """Build the structured report from raw records."""
         # 1. Data Access Summary
@@ -190,36 +186,43 @@ class ComplianceReporter:
             flow_key = f"{r.get('step', '')}:{','.join(r.get('input_artifacts', []))}"
             if flow_key not in seen_flows:
                 seen_flows.add(flow_key)
-                data_flows.append({
-                    "step": r.get("step", ""),
-                    "agent": r.get("agent", ""),
-                    "tool": r.get("tool", ""),
-                    "datasource": r.get("datasource", ""),
-                    "inputs": r.get("input_artifacts", []),
-                    "outputs": r.get("output_artifacts", []),
-                })
+                data_flows.append(
+                    {
+                        "step": r.get("step", ""),
+                        "agent": r.get("agent", ""),
+                        "tool": r.get("tool", ""),
+                        "datasource": r.get("datasource", ""),
+                        "inputs": r.get("input_artifacts", []),
+                        "outputs": r.get("output_artifacts", []),
+                    }
+                )
 
         # 5. Errors
         errors = []
         for r in audit_records:
             outputs = r.get("outputs", {})
             if isinstance(outputs, dict) and outputs.get("status") in ("failed", "error"):
-                errors.append({
-                    "timestamp": r.get("timestamp", ""),
-                    "agent": r.get("agent", ""),
-                    "tool": r.get("tool", ""),
-                    "inputs": r.get("inputs", {}),
-                    "error": outputs.get("error", outputs.get("message", "")),
-                })
+                errors.append(
+                    {
+                        "timestamp": r.get("timestamp", ""),
+                        "agent": r.get("agent", ""),
+                        "tool": r.get("tool", ""),
+                        "inputs": r.get("inputs", {}),
+                        "error": outputs.get("error", outputs.get("message", "")),
+                    }
+                )
 
         # 6. Validation Results
         validation_records = [
-            r for r in audit_records
-            if r.get("agent") == "validation" and r.get("tool") in ("validate_instance", "validate_batch")
+            r
+            for r in audit_records
+            if r.get("agent") == "validation"
+            and r.get("tool") in ("validate_instance", "validate_batch")
         ]
         validation_total = len(validation_records)
         validation_passed = sum(
-            1 for r in validation_records
+            1
+            for r in validation_records
             if isinstance(r.get("outputs", {}), dict) and r["outputs"].get("valid", False)
         )
 
@@ -234,7 +237,9 @@ class ComplianceReporter:
                 "total_audit_records": len(audit_records),
                 "total_lineage_records": len(lineage_records),
                 "total_errors": error_count,
-                "avg_duration_ms": round(total_duration / len(audit_records), 2) if audit_records else 0,
+                "avg_duration_ms": (
+                    round(total_duration / len(audit_records), 2) if audit_records else 0
+                ),
             },
             "data_access": data_access,
             "tool_invocations": tool_counts,
@@ -245,7 +250,9 @@ class ComplianceReporter:
                 "total": validation_total,
                 "passed": validation_passed,
                 "failed": validation_total - validation_passed,
-                "pass_rate": round(validation_passed / validation_total * 100, 1) if validation_total else 0,
+                "pass_rate": (
+                    round(validation_passed / validation_total * 100, 1) if validation_total else 0
+                ),
             },
         }
 
@@ -270,54 +277,69 @@ class ComplianceReporter:
             "|---|---|---|",
         ]
         for da in report["data_access"]:
-            lines.append(f"| {da['datasource']} | {', '.join(da['agents'])} | {da['access_count']} |")
+            lines.append(
+                f"| {da['datasource']} | {', '.join(da['agents'])} | {da['access_count']} |"
+            )
 
-        lines.extend([
-            "",
-            "## Tool Invocations",
-            "",
-            "| Agent.Tool | Count | Avg Duration | Errors |",
-            "|---|---|---|---|",
-        ])
+        lines.extend(
+            [
+                "",
+                "## Tool Invocations",
+                "",
+                "| Agent.Tool | Count | Avg Duration | Errors |",
+                "|---|---|---|---|",
+            ]
+        )
         for ti in report["tool_invocations"]:
-            lines.append(f"| {ti['agent_tool']} | {ti['count']} | {ti['avg_duration_ms']}ms | {ti['errors']} |")
+            lines.append(
+                f"| {ti['agent_tool']} | {ti['count']} | "
+                f"{ti['avg_duration_ms']}ms | {ti['errors']} |"
+            )
 
-        lines.extend([
-            "",
-            "## Credential Access",
-            "",
-        ])
+        lines.extend(
+            [
+                "",
+                "## Credential Access",
+                "",
+            ]
+        )
         if report["credential_access"]:
             for ca in report["credential_access"]:
                 lines.append(f"- {ca}")
         else:
             lines.append("No credential access detected in audit period.")
 
-        lines.extend([
-            "",
-            "## Data Flow",
-            "",
-        ])
+        lines.extend(
+            [
+                "",
+                "## Data Flow",
+                "",
+            ]
+        )
         for df in report["data_flows"]:
             inputs = ", ".join(df["inputs"]) or "(none)"
             outputs = ", ".join(df["outputs"]) or "(none)"
             lines.append(f"- **{df['step']}** ({df['agent']}.{df['tool']}): {inputs} → {outputs}")
 
-        lines.extend([
-            "",
-            "## Validation Results",
-            "",
-            f"- Total: {report['validation']['total']}",
-            f"- Passed: {report['validation']['passed']}",
-            f"- Failed: {report['validation']['failed']}",
-            f"- Pass rate: {report['validation']['pass_rate']}%",
-            "",
-            "## Errors",
-            "",
-        ])
+        lines.extend(
+            [
+                "",
+                "## Validation Results",
+                "",
+                f"- Total: {report['validation']['total']}",
+                f"- Passed: {report['validation']['passed']}",
+                f"- Failed: {report['validation']['failed']}",
+                f"- Pass rate: {report['validation']['pass_rate']}%",
+                "",
+                "## Errors",
+                "",
+            ]
+        )
         if report["errors"]:
             for err in report["errors"]:
-                lines.append(f"- **{err['timestamp']}** {err['agent']}.{err['tool']}: {err['error']}")
+                lines.append(
+                    f"- **{err['timestamp']}** " f"{err['agent']}.{err['tool']}: {err['error']}"
+                )
         else:
             lines.append("No errors in audit period.")
 
@@ -327,7 +349,6 @@ class ComplianceReporter:
         """Render report as self-contained HTML."""
         md = self._render_markdown(report)
         # Simple HTML wrapper — production would use a proper template
-        escaped = md.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
 
         # Convert markdown tables to HTML tables (basic)
         html_body = ""
@@ -336,17 +357,28 @@ class ComplianceReporter:
             if line.startswith("|") and "---|" not in line:
                 cells = [c.strip() for c in line.split("|")[1:-1]]
                 if not in_table:
-                    html_body += "<table style='border-collapse:collapse;width:100%;margin:16px 0'>\n"
-                    html_body += "<tr>" + "".join(
-                        f"<th style='text-align:left;padding:8px;border:1px solid #334155;background:#1e293b'>{c}</th>"
-                        for c in cells
-                    ) + "</tr>\n"
+                    html_body += (
+                        "<table style='border-collapse:collapse;width:100%;margin:16px 0'>\n"
+                    )
+                    html_body += (
+                        "<tr>"
+                        + "".join(
+                            f"<th style='text-align:left;padding:8px;"
+                            f"border:1px solid #334155;background:#1e293b'>{c}</th>"
+                            for c in cells
+                        )
+                        + "</tr>\n"
+                    )
                     in_table = True
                 else:
-                    html_body += "<tr>" + "".join(
-                        f"<td style='padding:8px;border:1px solid #334155'>{c}</td>"
-                        for c in cells
-                    ) + "</tr>\n"
+                    html_body += (
+                        "<tr>"
+                        + "".join(
+                            f"<td style='padding:8px;border:1px solid #334155'>{c}</td>"
+                            for c in cells
+                        )
+                        + "</tr>\n"
+                    )
             elif line.startswith("|---"):
                 continue
             else:
@@ -356,7 +388,11 @@ class ComplianceReporter:
                 if line.startswith("# "):
                     html_body += f"<h1>{line[2:]}</h1>\n"
                 elif line.startswith("## "):
-                    html_body += f"<h2 style='margin-top:24px;border-bottom:1px solid #334155;padding-bottom:8px'>{line[3:]}</h2>\n"
+                    html_body += (
+                        f"<h2 style='margin-top:24px;"
+                        f"border-bottom:1px solid #334155;"
+                        f"padding-bottom:8px'>{line[3:]}</h2>\n"
+                    )
                 elif line.startswith("- **"):
                     html_body += f"<p style='margin:4px 0'>{line[2:]}</p>\n"
                 elif line.startswith("- "):

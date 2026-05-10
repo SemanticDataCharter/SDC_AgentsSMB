@@ -15,7 +15,6 @@ import time
 from datetime import datetime, timezone
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
-from typing import Any, Dict
 
 import httpx
 
@@ -67,17 +66,21 @@ class Notifier:
                     await self._send_email(name, cfg, payload)
                     results.append({"channel": name, "status": "sent"})
                 else:
-                    results.append({
+                    results.append(
+                        {
+                            "channel": name,
+                            "status": "failed",
+                            "error": f"Unknown notification type: {cfg.type}",
+                        }
+                    )
+            except Exception as exc:
+                results.append(
+                    {
                         "channel": name,
                         "status": "failed",
-                        "error": f"Unknown notification type: {cfg.type}",
-                    })
-            except Exception as exc:
-                results.append({
-                    "channel": name,
-                    "status": "failed",
-                    "error": str(exc),
-                })
+                        "error": str(exc),
+                    }
+                )
 
         self._audit.log(
             agent="notifier",
@@ -88,9 +91,7 @@ class Notifier:
         )
         return results
 
-    async def _send_slack(
-        self, name: str, cfg: NotificationConfig, payload: dict
-    ) -> None:
+    async def _send_slack(self, name: str, cfg: NotificationConfig, payload: dict) -> None:
         """Send notification via Slack incoming webhook."""
         if not cfg.webhook_url:
             raise ValueError(f"Slack notification '{name}' missing webhook_url")
@@ -129,14 +130,10 @@ class Notifier:
             resp = await client.post(cfg.webhook_url, json=slack_payload, timeout=10.0)
             resp.raise_for_status()
 
-    async def _send_telegram(
-        self, name: str, cfg: NotificationConfig, payload: dict
-    ) -> None:
+    async def _send_telegram(self, name: str, cfg: NotificationConfig, payload: dict) -> None:
         """Send notification via Telegram Bot API."""
         if not cfg.bot_token or not cfg.chat_id:
-            raise ValueError(
-                f"Telegram notification '{name}' missing bot_token or chat_id"
-            )
+            raise ValueError(f"Telegram notification '{name}' missing bot_token or chat_id")
 
         text = (
             f"*SDC Agents: {payload['event']}*\n\n"
@@ -157,14 +154,11 @@ class Notifier:
             resp = await client.post(url, json=telegram_payload, timeout=10.0)
             resp.raise_for_status()
 
-    async def _send_email(
-        self, name: str, cfg: NotificationConfig, payload: dict
-    ) -> None:
+    async def _send_email(self, name: str, cfg: NotificationConfig, payload: dict) -> None:
         """Send notification via SMTP email."""
         if not cfg.smtp_host or not cfg.from_address or not cfg.to_addresses:
             raise ValueError(
-                f"Email notification '{name}' missing smtp_host, from_address, "
-                "or to_addresses"
+                f"Email notification '{name}' missing smtp_host, from_address, " "or to_addresses"
             )
 
         msg = MIMEMultipart("alternative")

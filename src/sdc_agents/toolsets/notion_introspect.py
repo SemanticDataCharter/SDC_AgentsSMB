@@ -97,9 +97,7 @@ class NotionIntrospectToolset(BaseToolset):
     async def get_tools(self) -> list[FunctionTool]:
         return [FunctionTool(self.introspect_notion)]
 
-    async def introspect_notion(
-        self, datasource_name: str, max_rows: int = 100
-    ) -> dict:
+    async def introspect_notion(self, datasource_name: str, max_rows: int = 100) -> dict:
         """Introspect a Notion database to discover property structure and types.
 
         Queries the Notion API for database schema (properties) and sample

@@ -938,9 +938,7 @@ class IntrospectToolset(BaseToolset):
             previous = json.loads(cache_path.read_text())
             # Preserve file modification time as timestamp
             stat = cache_path.stat()
-            previous_timestamp = datetime.fromtimestamp(
-                stat.st_mtime, tz=timezone.utc
-            ).isoformat()
+            previous_timestamp = datetime.fromtimestamp(stat.st_mtime, tz=timezone.utc).isoformat()
             # Save backup
             prev_path = cache_path.with_suffix(".prev.json")
             shutil.copy2(cache_path, prev_path)
@@ -1040,7 +1038,12 @@ class IntrospectToolset(BaseToolset):
                 # Include native type info from metadata if available
                 old_meta = old.get("metadata", {})
                 new_meta = new.get("metadata", {})
-                for key in ("notion_property_type", "airtable_field_type", "sql_type", "bson_type"):
+                for key in (
+                    "notion_property_type",
+                    "airtable_field_type",
+                    "sql_type",
+                    "bson_type",
+                ):
                     if key in old_meta or key in new_meta:
                         change[f"old_{key}"] = old_meta.get(key, "")
                         change[f"new_{key}"] = new_meta.get(key, "")
@@ -1049,12 +1052,18 @@ class IntrospectToolset(BaseToolset):
             # Nullability change
             old_nullable = old.get("nullable")
             new_nullable = new.get("nullable")
-            if old_nullable is not None and new_nullable is not None and old_nullable != new_nullable:
-                nullability_changes.append({
-                    "name": name,
-                    "old_nullable": old_nullable,
-                    "new_nullable": new_nullable,
-                })
+            if (
+                old_nullable is not None
+                and new_nullable is not None
+                and old_nullable != new_nullable
+            ):
+                nullability_changes.append(
+                    {
+                        "name": name,
+                        "old_nullable": old_nullable,
+                        "new_nullable": new_nullable,
+                    }
+                )
 
             # Enumeration change (select options added/removed — critical for Notion/Airtable)
             old_enum = old.get("enumeration") or {}
@@ -1062,25 +1071,33 @@ class IntrospectToolset(BaseToolset):
             if old_enum != new_enum:
                 old_keys = set(old_enum.keys()) if isinstance(old_enum, dict) else set()
                 new_keys = set(new_enum.keys()) if isinstance(new_enum, dict) else set()
-                enumeration_changes.append({
-                    "name": name,
-                    "added_options": sorted(new_keys - old_keys),
-                    "removed_options": sorted(old_keys - new_keys),
-                })
+                enumeration_changes.append(
+                    {
+                        "name": name,
+                        "added_options": sorted(new_keys - old_keys),
+                        "removed_options": sorted(old_keys - new_keys),
+                    }
+                )
 
             # Relationship change (linked records/relations — Notion, Airtable, SQL FK)
             old_rel = old.get("relationships", "")
             new_rel = new.get("relationships", "")
             if old_rel != new_rel:
-                relationship_changes.append({
-                    "name": name,
-                    "old_relationships": old_rel,
-                    "new_relationships": new_rel,
-                })
+                relationship_changes.append(
+                    {
+                        "name": name,
+                        "old_relationships": old_rel,
+                        "new_relationships": new_rel,
+                    }
+                )
 
         drift_detected = bool(
-            added or removed or type_changes or nullability_changes
-            or enumeration_changes or relationship_changes
+            added
+            or removed
+            or type_changes
+            or nullability_changes
+            or enumeration_changes
+            or relationship_changes
         )
 
         result = {

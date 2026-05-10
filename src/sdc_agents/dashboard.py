@@ -43,6 +43,7 @@ def _read_records(
     cutoff = None
     if last_hours:
         from datetime import timedelta
+
         cutoff = datetime.now(timezone.utc) - timedelta(hours=last_hours)
 
     records = []
@@ -127,18 +128,24 @@ async def export_records(
     if format == "csv":
         import csv
         import io
+
         output = io.StringIO()
         if records:
-            writer = csv.DictWriter(output, fieldnames=["timestamp", "agent", "tool", "duration_ms"])
+            writer = csv.DictWriter(
+                output, fieldnames=["timestamp", "agent", "tool", "duration_ms"]
+            )
             writer.writeheader()
             for r in records:
-                writer.writerow({
-                    "timestamp": r.get("timestamp", ""),
-                    "agent": r.get("agent", ""),
-                    "tool": r.get("tool", ""),
-                    "duration_ms": r.get("duration_ms", ""),
-                })
+                writer.writerow(
+                    {
+                        "timestamp": r.get("timestamp", ""),
+                        "agent": r.get("agent", ""),
+                        "tool": r.get("tool", ""),
+                        "duration_ms": r.get("duration_ms", ""),
+                    }
+                )
         from fastapi.responses import PlainTextResponse
+
         return PlainTextResponse(output.getvalue(), media_type="text/csv")
 
     return JSONResponse({"records": records, "count": len(records)})
@@ -246,9 +253,12 @@ async function loadData() {
   const agg = await aggResp.json();
 
   document.getElementById('stats').innerHTML = `
-    <div class="stat"><div class="label">Total Records</div><div class="value">${agg.total_records}</div></div>
-    <div class="stat"><div class="label">Agents</div><div class="value">${Object.keys(agg.by_agent).length}</div></div>
-    <div class="stat"><div class="label">Avg Duration</div><div class="value">${agg.avg_duration_ms}ms</div></div>
+    <div class="stat"><div class="label">Total Records</div>
+      <div class="value">${agg.total_records}</div></div>
+    <div class="stat"><div class="label">Agents</div>
+      <div class="value">${Object.keys(agg.by_agent).length}</div></div>
+    <div class="stat"><div class="label">Avg Duration</div>
+      <div class="value">${agg.avg_duration_ms}ms</div></div>
   `;
 
   // Export links
