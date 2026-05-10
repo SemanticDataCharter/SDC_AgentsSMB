@@ -287,7 +287,9 @@ def info(ctx: click.Context) -> None:
     click.echo(f"Cache root  : {config.cache.root}")
     click.echo(f"Output dir  : {config.output.directory}")
     click.echo(f"Audit path  : {config.audit.path}")
-    click.echo(f"HITL review : {'enabled' if config.assembly.review_before_publish else 'disabled'}")
+    click.echo(
+        f"HITL review : {'enabled' if config.assembly.review_before_publish else 'disabled'}"
+    )
     click.echo(f"Notify chans: {len(config.notifications)}")
     click.echo(f"Schedules   : {len(config.schedules)}")
     click.echo()
@@ -530,7 +532,7 @@ def assembly_approve(ctx: click.Context, name: str) -> None:
         mode = result.get("mode", "?")
         if mode == "sync":
             click.echo(f"  Published: {result.get('dm_ct_id', '?')}")
-            click.echo(f"  Download:  sdc-agents serve --mcp catalog")
+            click.echo("  Download:  sdc-agents serve --mcp catalog")
         elif mode == "async":
             task_id = result.get("task_id", "?")
             click.echo(f"  Submitted (async): task_id={task_id}")
@@ -646,9 +648,7 @@ def schedule_trigger(ctx: click.Context, job_name: str) -> None:
 
     if job_name not in config.schedules:
         available = ", ".join(sorted(config.schedules.keys())) or "(none)"
-        raise click.ClickException(
-            f"Unknown schedule '{job_name}'. Available: {available}"
-        )
+        raise click.ClickException(f"Unknown schedule '{job_name}'. Available: {available}")
 
     job = config.schedules[job_name]
     runner = PipelineRunner(config)
@@ -781,12 +781,26 @@ def compliance() -> None:
 
 
 @compliance.command("report")
-@click.option("--format", "fmt", default="json", type=click.Choice(["json", "markdown", "html"]),
-              help="Output format.")
-@click.option("--last", default=None, metavar="DURATION",
-              help="Include records from duration (e.g., 24h, 7d, 30d).")
-@click.option("--output", "-o", default=None, type=click.Path(),
-              help="Write report to file (default: stdout).")
+@click.option(
+    "--format",
+    "fmt",
+    default="json",
+    type=click.Choice(["json", "markdown", "html"]),
+    help="Output format.",
+)
+@click.option(
+    "--last",
+    default=None,
+    metavar="DURATION",
+    help="Include records from duration (e.g., 24h, 7d, 30d).",
+)
+@click.option(
+    "--output",
+    "-o",
+    default=None,
+    type=click.Path(),
+    help="Write report to file (default: stdout).",
+)
 @click.pass_context
 def compliance_report(
     ctx: click.Context,
@@ -949,10 +963,11 @@ def annotate() -> None:
 @click.argument("datasource")
 @click.argument("column")
 @click.argument("note")
-@click.option("--category", default="user_note",
-              help="Annotation category (default: user_note).")
+@click.option("--category", default="user_note", help="Annotation category (default: user_note).")
 @click.pass_context
-def annotate_add(ctx: click.Context, datasource: str, column: str, note: str, category: str) -> None:
+def annotate_add(
+    ctx: click.Context, datasource: str, column: str, note: str, category: str
+) -> None:
     """Add a manual annotation for a datasource column."""
     from sdc_agents.common.annotations import AnnotationStore
     from sdc_agents.common.config import load_config
@@ -964,7 +979,7 @@ def annotate_add(ctx: click.Context, datasource: str, column: str, note: str, ca
         cache_root = ".sdc-cache"
 
     store = AnnotationStore(cache_root)
-    record = store.add(datasource, column, category, note, source="user")
+    store.add(datasource, column, category, note, source="user")
     click.echo(f"Annotation added: {datasource}.{column} [{category}]")
     click.echo(f"  {note}")
 

@@ -21,7 +21,6 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Literal, Optional
 
-
 ANNOTATION_CATEGORIES = (
     "null_violation",
     "type_mismatch",
@@ -190,8 +189,7 @@ def auto_annotate_introspection(
         # Null violation: not-nullable but has empty/None values
         if nullable is False:
             empty_count = sum(
-                1 for v in sample_values
-                if v is None or (isinstance(v, str) and not v.strip())
+                1 for v in sample_values if v is None or (isinstance(v, str) and not v.strip())
             )
             if empty_count > 0:
                 ann = store.add(
@@ -207,10 +205,7 @@ def auto_annotate_introspection(
         # Value anomaly: sentinel values in typed columns
         if data_type not in ("string", "array", "object"):
             sentinels = {"n/a", "na", "null", "none", "#n/a", "-", "--", ".", ""}
-            found_sentinels = [
-                v for v in str_samples
-                if v.strip().lower() in sentinels
-            ]
+            found_sentinels = [v for v in str_samples if v.strip().lower() in sentinels]
             if found_sentinels:
                 ann = store.add(
                     datasource_name,
@@ -225,6 +220,7 @@ def auto_annotate_introspection(
         # Mixed format: dates with multiple patterns
         if data_type in ("date", "datetime"):
             import re
+
             iso_pattern = re.compile(r"^\d{4}-\d{2}-\d{2}")
             us_pattern = re.compile(r"^\d{1,2}/\d{1,2}/\d{2,4}")
             eu_pattern = re.compile(r"^\d{1,2}\.\d{1,2}\.\d{2,4}")
@@ -253,9 +249,9 @@ def auto_annotate_introspection(
         # Type mismatch: numeric column with non-numeric samples
         if data_type in ("integer", "decimal"):
             import re
+
             non_numeric = [
-                v for v in str_samples
-                if v.strip() and not re.match(r"^-?\d+\.?\d*$", v.strip())
+                v for v in str_samples if v.strip() and not re.match(r"^-?\d+\.?\d*$", v.strip())
             ]
             if non_numeric and len(non_numeric) <= len(str_samples) // 2:
                 ann = store.add(

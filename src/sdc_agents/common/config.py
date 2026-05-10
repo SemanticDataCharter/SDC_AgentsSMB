@@ -44,7 +44,7 @@ def _walk_and_substitute(obj: object) -> object:
 class SDCStudioConfig(BaseModel):
     """SDCStudio API connection settings."""
 
-    base_url: str = "https://sdcstudio.example.com"
+    base_url: str = "https://sdcstudio.axius-sdc.com"
     api_key: Optional[str] = None  # VaaS token (Validation Agent only)
     toolbox_url: Optional[str] = None  # MCP Toolbox server URL (optional)
     default_library_project: Optional[str] = None  # Default project for contextual components
@@ -143,14 +143,14 @@ class NotificationConfig(BaseModel):
     """A notification destination for pipeline status updates."""
 
     type: Literal["slack_webhook", "telegram", "email"]
-    webhook_url: Optional[str] = None       # Slack
-    bot_token: Optional[str] = None         # Telegram
-    chat_id: Optional[str] = None           # Telegram
-    smtp_host: Optional[str] = None         # Email
-    smtp_port: int = 587                    # Email
-    smtp_user: Optional[str] = None         # Email
-    smtp_password: Optional[str] = None     # Email
-    from_address: Optional[str] = None      # Email
+    webhook_url: Optional[str] = None  # Slack
+    bot_token: Optional[str] = None  # Telegram
+    chat_id: Optional[str] = None  # Telegram
+    smtp_host: Optional[str] = None  # Email
+    smtp_port: int = 587  # Email
+    smtp_user: Optional[str] = None  # Email
+    smtp_password: Optional[str] = None  # Email
+    from_address: Optional[str] = None  # Email
     to_addresses: list[str] = Field(default_factory=list)  # Email
 
 

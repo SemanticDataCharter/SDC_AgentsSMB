@@ -22,7 +22,6 @@ import re
 import time
 from datetime import datetime, timezone
 from difflib import SequenceMatcher
-from pathlib import Path
 from typing import Optional
 
 import httpx

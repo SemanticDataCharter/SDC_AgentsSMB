@@ -12,7 +12,6 @@ from __future__ import annotations
 import json
 import time
 from pathlib import Path
-from typing import Optional
 
 from google.adk.tools import FunctionTool
 from google.adk.tools.base_toolset import BaseToolset
@@ -76,9 +75,7 @@ class SheetsIntrospectToolset(BaseToolset):
     async def get_tools(self) -> list[FunctionTool]:
         return [FunctionTool(self.introspect_sheets)]
 
-    async def introspect_sheets(
-        self, datasource_name: str, max_rows: int = 100
-    ) -> dict:
+    async def introspect_sheets(self, datasource_name: str, max_rows: int = 100) -> dict:
         """Introspect a Google Sheets spreadsheet to discover column structure.
 
         Reads headers and sample data from the specified sheet, then infers
@@ -120,9 +117,7 @@ class SheetsIntrospectToolset(BaseToolset):
         # Authenticate via service account
         creds_path = Path(ds.sheets_credentials)
         if not creds_path.is_file():
-            raise FileNotFoundError(
-                f"Sheets credentials file not found: {ds.sheets_credentials}"
-            )
+            raise FileNotFoundError(f"Sheets credentials file not found: {ds.sheets_credentials}")
 
         creds = Credentials.from_service_account_file(
             str(creds_path),

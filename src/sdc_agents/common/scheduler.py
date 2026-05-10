@@ -8,14 +8,12 @@ All tool calls go through the existing AuditLogger.
 from __future__ import annotations
 
 import asyncio
-import json
 import logging
 import time
 from importlib import import_module
-from typing import Any
 
 from sdc_agents.common.audit import AuditLogger
-from sdc_agents.common.config import SDCAgentsConfig, ScheduleJobConfig
+from sdc_agents.common.config import ScheduleJobConfig, SDCAgentsConfig
 
 logger = logging.getLogger("sdc_agents.scheduler")
 
@@ -90,13 +88,15 @@ class PipelineRunner:
                     )
 
                 result = await tool_func.run_async(args=step.args, tool_context=None)
-                step_results.append({
-                    "step": i,
-                    "agent": step.agent,
-                    "tool": step.tool,
-                    "status": "completed",
-                    "duration_ms": round((time.monotonic() - step_start) * 1000, 2),
-                })
+                step_results.append(
+                    {
+                        "step": i,
+                        "agent": step.agent,
+                        "tool": step.tool,
+                        "status": "completed",
+                        "duration_ms": round((time.monotonic() - step_start) * 1000, 2),
+                    }
+                )
                 steps_completed += 1
 
             except Exception as exc:
@@ -112,7 +112,11 @@ class PipelineRunner:
                 status = "failed"
                 logger.error(
                     "Schedule '%s' step %d failed (%s.%s): %s",
-                    job_name, i, step.agent, step.tool, exc,
+                    job_name,
+                    i,
+                    step.agent,
+                    step.tool,
+                    exc,
                 )
                 break  # Skip remaining steps
 
@@ -196,7 +200,9 @@ class SchedulerRuntime:
             )
             logger.info(
                 "Registered schedule '%s' [%s] (%d steps)",
-                job_name, job_config.cron, len(job_config.steps),
+                job_name,
+                job_config.cron,
+                len(job_config.steps),
             )
 
         scheduler.start()
@@ -214,7 +220,10 @@ class SchedulerRuntime:
             result = await self._runner.run_job(job_name, job_config)
             logger.info(
                 "Schedule '%s' completed: %d/%d steps (%s)",
-                job_name, result["steps_completed"], result["steps_total"], result["status"],
+                job_name,
+                result["steps_completed"],
+                result["steps_total"],
+                result["status"],
             )
         except Exception as exc:
             logger.error("Schedule '%s' raised unexpected error: %s", job_name, exc)

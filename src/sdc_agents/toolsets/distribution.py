@@ -427,9 +427,7 @@ class DistributionToolset(BaseToolset):
         )
 
         # Log lineage — package distributed to destinations
-        dest_names = [
-            r["destination"] for r in per_artifact_results if r["status"] == "delivered"
-        ]
+        dest_names = [r["destination"] for r in per_artifact_results if r["status"] == "delivered"]
         self._lineage.log_step(
             step="distribute",
             agent="distribution",

@@ -7,14 +7,11 @@ then executes them using the PipelineRunner from the scheduler module.
 from __future__ import annotations
 
 import re
-from importlib import resources
 from pathlib import Path
-from typing import Optional
 
 import yaml
 
-from sdc_agents.common.config import PipelineStep, SDCAgentsConfig, ScheduleJobConfig
-
+from sdc_agents.common.config import PipelineStep, ScheduleJobConfig
 
 _TEMPLATE_VAR_PATTERN = re.compile(r"\{\{\s*(\w+)\s*\}\}")
 
@@ -22,6 +19,7 @@ _TEMPLATE_VAR_PATTERN = re.compile(r"\{\{\s*(\w+)\s*\}\}")
 def _substitute_template_vars(obj: object, params: dict[str, str]) -> object:
     """Recursively substitute {{ var }} placeholders in strings."""
     if isinstance(obj, str):
+
         def _replace(match: re.Match) -> str:
             var_name = match.group(1)
             if var_name not in params:
@@ -30,6 +28,7 @@ def _substitute_template_vars(obj: object, params: dict[str, str]) -> object:
                     f"Available: {list(params.keys())}"
                 )
             return params[var_name]
+
         return _TEMPLATE_VAR_PATTERN.sub(_replace, obj)
     if isinstance(obj, dict):
         return {k: _substitute_template_vars(v, params) for k, v in obj.items()}
@@ -52,13 +51,15 @@ def list_templates() -> list[dict]:
         for path in sorted(template_dir.glob("*.yaml")):
             try:
                 data = yaml.safe_load(path.read_text())
-                templates.append({
-                    "name": path.stem,
-                    "description": data.get("description", ""),
-                    "parameters": [p.get("name") for p in data.get("parameters", [])],
-                    "step_count": len(data.get("steps", [])),
-                    "source": "bundled",
-                })
+                templates.append(
+                    {
+                        "name": path.stem,
+                        "description": data.get("description", ""),
+                        "parameters": [p.get("name") for p in data.get("parameters", [])],
+                        "step_count": len(data.get("steps", [])),
+                        "source": "bundled",
+                    }
+                )
             except (yaml.YAMLError, KeyError):
                 continue
 
