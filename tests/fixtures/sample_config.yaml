@@ -1,0 +1,51 @@
+sdcstudio:
+  base_url: "https://sdcstudio.test.local"
+  default_library_project: "SDC4-Core"
+
+cache:
+  root: ".test-cache"
+  ttl_hours: 1
+
+audit:
+  path: ".test-cache/audit.jsonl"
+  log_level: "verbose"
+
+datasources:
+  test_db:
+    type: "sql"
+    connection_string: "sqlite+aiosqlite://"
+  test_csv:
+    type: "csv"
+    path: "tests/fixtures/sample_data/lab_results.csv"
+  test_json:
+    type: "json"
+    path: "tests/fixtures/sample_data/records.json"
+    jsonpath: "$.results[*]"
+
+knowledge:
+  vector_store: "chroma"
+  vector_store_path: ".test-cache/knowledge/"
+  sources:
+    glossary:
+      type: "json"
+      path: "tests/fixtures/sample_data/glossary.json"
+    vocab:
+      type: "ttl"
+      path: "tests/fixtures/sample_data/vocab.ttl"
+    data_dictionary:
+      type: "markdown"
+      path: "tests/fixtures/sample_data/data_dictionary.md"
+
+output:
+  directory: "./test-output"
+  formats:
+    - "xml"
+
+destinations:
+  test_triplestore:
+    type: "fuseki"
+    endpoint: "http://localhost:3030/test/data"
+  test_archive:
+    type: "filesystem"
+    path: "./test-archive/{ct_id}/{instance_id}/"
+    create_directories: true
