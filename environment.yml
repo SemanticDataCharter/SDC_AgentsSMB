@@ -1,0 +1,25 @@
+# Conda environment for developing and testing SDC_AgentsSMB.
+#
+#   conda env create -f environment.yml
+#   conda activate SDC_AgentsSMB
+#   pip install -e ".[dev]"
+#
+# ★ This repo MUST have its own environment, for two reasons.
+#
+# 1. It depends on google-adk, which SDCStudio deliberately removed during the
+#    2026-08 AI-stack modernization because its pin cascade was blocking
+#    Dependabot. The SDCStudio env cannot run these tests.
+#
+# 2. SDC_Agents and SDC_AgentsSMB both provide the module `sdc_agents`, so they
+#    CANNOT COEXIST in one environment. Installing both leaves `import
+#    sdc_agents` resolving to whichever was installed last, and a test run then
+#    silently exercises the wrong repo while reporting success. That happened
+#    on 2026-08-24.
+name: SDC_AgentsSMB
+channels:
+  - conda-forge
+dependencies:
+  - python=3.12
+  - pip
+  - pip:
+      - -e .[dev]

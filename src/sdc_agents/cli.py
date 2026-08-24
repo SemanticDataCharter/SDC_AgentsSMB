@@ -16,6 +16,8 @@ from pathlib import Path
 
 import click
 
+from sdc_agents.common.credits import fmt_from
+
 AGENT_REGISTRY: dict[str, tuple[str, str]] = {
     "assembly": ("sdc_agents.toolsets.assembly", "AssemblyToolset"),
     "catalog": ("sdc_agents.toolsets.catalog", "CatalogToolset"),
@@ -429,8 +431,8 @@ def assembly_list_pending(ctx: click.Context) -> None:
             if summary:
                 reuse = summary.get("reuse_count", 0)
                 mint = summary.get("mint_count", 0)
-                cost = summary.get("estimated_cost", 0)
-                click.echo(f"    reuse: {reuse}, mint: {mint}, est. cost: ${cost:.2f}")
+                cost = fmt_from(summary, "estimated_cost_credits", "estimated_cost")
+                click.echo(f"    reuse: {reuse}, mint: {mint}, est. cost: {cost} credits")
         except (json.JSONDecodeError, KeyError):
             click.echo(f"  {path.stem:30s} (unreadable)")
 
@@ -463,8 +465,10 @@ def assembly_review(ctx: click.Context, name: str) -> None:
     summary = manifest.get("summary", {})
     click.echo(f"  Reuse components : {summary.get('reuse_count', 0)} (free)")
     click.echo(f"  Mint components  : {summary.get('mint_count', 0)} (billable)")
-    click.echo(f"  Estimated cost   : ${summary.get('estimated_cost', 0):.2f}")
-    click.echo(f"  Wallet balance   : ${summary.get('wallet_balance', 0):.2f}")
+    est = fmt_from(summary, "estimated_cost_credits", "estimated_cost")
+    click.echo(f"  Estimated cost   : {est} credits")
+    bal = fmt_from(summary, "wallet_balance_credits", "wallet_balance")
+    click.echo(f"  Wallet balance   : {bal} credits")
     click.echo()
 
     # Show components to mint
@@ -536,7 +540,8 @@ def assembly_approve(ctx: click.Context, name: str) -> None:
         elif mode == "async":
             task_id = result.get("task_id", "?")
             click.echo(f"  Submitted (async): task_id={task_id}")
-            click.echo(f"  Estimated cost: ${result.get('estimated_cost', 0):.2f}")
+            est = fmt_from(result, "estimated_cost_credits", "estimated_cost")
+            click.echo(f"  Estimated cost: {est} credits")
         else:
             click.echo(f"  Result: {json.dumps(result, default=str)}")
     except Exception as exc:

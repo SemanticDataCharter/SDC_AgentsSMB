@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "sdc-agents-smb"
-version = "4.0.0"
+version = "4.0.1"
 description = "Purpose-scoped ADK agents for SDC4 data operations — SMB Edition (local LLM via Ollama)"
 readme = "README.md"
 license = "Apache-2.0"
