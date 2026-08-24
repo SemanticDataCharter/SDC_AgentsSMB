@@ -174,6 +174,43 @@ Any Ollama model with tool-calling support should work. Use the `ollama_chat/` p
 - **Append-only audit** — every tool call logged to `.sdc-cache/audit.jsonl`
 - **ToolsetHub scope enforcement** — plugins declare network hosts, datasource types, and file access; violations rejected at load time
 
+## Development
+
+### Environment
+
+**This repo needs its own environment, and that is not a preference.**
+`SDC_Agents` and `SDC_AgentsSMB` both provide the module `sdc_agents`, so they
+cannot coexist: install both and `import sdc_agents` resolves to whichever
+landed last, which means a test run can silently exercise the wrong repo while
+reporting success. It also depends on `google-adk`, which SDCStudio removed
+deliberately, so the SDCStudio environment cannot run these tests either.
+
+```bash
+conda env create -f environment.yml
+conda activate SDC_AgentsSMB
+pip install -e ".[dev]"
+pytest -q
+```
+
+CI runs `ruff check`, then `black --check`, then `pytest`. Run the formatters
+before pushing.
+
+### Releasing
+
+**Two steps, and merging alone ships nothing.** `release.yml` triggers on a
+**tag**, not on a push to `main`. Merging publishes the Docker image and
+nothing else, which looks like a finished release.
+
+```bash
+# after the PR is merged and main carries the new version
+git checkout main && git pull
+git tag -a v4.0.1 -m "4.0.1"   # must match `version` in pyproject.toml
+git push origin v4.0.1
+```
+
+The tag builds and publishes to PyPI. `__version__` derives from the installed
+distribution, so only `pyproject.toml` needs the bump.
+
 ## Documentation
 
 - [Repository Guide](docs/ecosystem/REPOSITORY_GUIDE.md) — catalog of all SDC FOSS repos
