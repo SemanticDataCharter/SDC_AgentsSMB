@@ -31,6 +31,7 @@ from google.adk.tools.base_toolset import BaseToolset
 from sdc_agents.common.audit import AuditLogger
 from sdc_agents.common.cache import CacheManager
 from sdc_agents.common.config import SDCAgentsConfig
+from sdc_agents.common.credits import fmt_credits, to_credits
 from sdc_agents.common.exceptions import InsufficientFundsError
 from sdc_agents.toolsets.mapping import TYPE_COMPATIBILITY
 
@@ -143,9 +144,16 @@ class AssemblyToolset(BaseToolset):
                 data.get("balance", data.get("balance_remaining", "")),
             )
             raise InsufficientFundsError(
-                message=data.get("error", data.get("detail", "Insufficient wallet balance.")),
+                message=data.get("error", data.get("detail", "Insufficient credits.")),
                 estimated_cost=est,
                 balance_remaining=bal,
+                # The server's message quotes credits, so carry its credits
+                # fields rather than re-deriving them and risking a mismatch
+                # between the message and the numbers beside it.
+                estimated_cost_credits=data.get("estimated_cost_credits", ""),
+                balance_remaining_credits=data.get(
+                    "balance_credits", data.get("balance_remaining_credits", "")
+                ),
             )
 
     @staticmethod
@@ -901,6 +909,10 @@ class AssemblyToolset(BaseToolset):
                 "summary": {
                     "reuse_count": reuse_count,
                     "mint_count": len(mint_components),
+                    # Credits are what the user is quoted; the USD values stay
+                    # for accounting and for older readers of this manifest.
+                    "estimated_cost_credits": to_credits(estimated_cost),
+                    "wallet_balance_credits": to_credits(wallet_balance),
                     "estimated_cost": estimated_cost,
                     "wallet_balance": wallet_balance,
                 },
@@ -921,7 +933,7 @@ class AssemblyToolset(BaseToolset):
                 "summary": manifest["summary"],
                 "message": (
                     f"Assembly requires minting {len(mint_components)} new component(s) "
-                    f"(estimated cost: ${estimated_cost:.2f}). "
+                    f"(estimated cost: {fmt_credits(estimated_cost)} credits). "
                     f"{reuse_count} component(s) will be reused at no cost. "
                     f"Review with: sdc-agents assembly review {title_slug}"
                 ),

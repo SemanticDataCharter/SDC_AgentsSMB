@@ -42,14 +42,14 @@ def create_catalog_agent(
             "- List available schemas, optionally filtering by search query\n"
             "- Get full schema details including component trees\n"
             "- Download schema artifacts: RDF, XML skeletons, ontologies\n"
-            "- Check wallet balance before expensive operations\n"
+            "- Check the credit balance before expensive operations\n"
             "- Download published data model packages (download_package)\n\n"
             "You CANNOT:\n"
             "- Access datasources (SQL, CSV, etc.)\n"
             "- Modify or create schemas\n\n"
             "Always use the schema's ct_id (CUID2) when referencing specific schemas. "
             "Schemas are immutable — once published, they never change. "
-            "Before assembly or minting operations, check the wallet balance to "
+            "Before assembly or minting operations, check the credit balance to "
             "ensure sufficient funds are available."
         ),
         tools=[CatalogToolset(config=config)],
