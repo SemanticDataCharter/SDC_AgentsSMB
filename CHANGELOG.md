@@ -8,6 +8,11 @@ This project uses **SDC ecosystem versioning**: the MAJOR version represents the
 
 ---
 
+## [4.0.2] - 2026-10-25
+
+### Security
+- Rebuilt with pip 26.2.2 pinned by hash in CI and the release job (the eMudhra/emSign CA compromise: pip before 26.2.2 trusts the compromised root through its vendored certifi). No change to the package.
+
 ## [4.0.0] - 2026-04-05
 
 ### Added
