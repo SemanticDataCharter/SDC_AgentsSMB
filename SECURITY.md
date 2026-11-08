@@ -52,7 +52,7 @@ Every tool invocation writes a structured JSON record to an append-only audit lo
 
 **Do NOT report security vulnerabilities through public GitHub issues.**
 
-Report via email or private message to the repository maintainer. Please include:
+Report privately through GitHub's private vulnerability reporting: open this repository's Security tab and choose "Report a vulnerability" (https://github.com/SemanticDataCharter/SDC_AgentsSMB/security/advisories/new). Do not send a report by email. Please include:
 
 1. **Description** — a clear description of the vulnerability
 2. **Affected agent(s)** — which agent(s) are involved
