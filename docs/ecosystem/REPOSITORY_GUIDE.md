@@ -144,14 +144,14 @@ From raw data to a validated, reasoned knowledge graph in 5 minutes.
 
 Demonstrates the full SDC Agents pipeline with real data.
 
-### SDC_Demo (Cordova OS) — Cross-Domain Interoperability Demo
+### CordovaOS — Cross-Domain Interoperability Demo
 10-domain government interoperability demonstration.
 
 | | |
 |---|---|
-| **Repo** | [Axius-SDC/SDC_Demo](https://github.com/Axius-SDC/SDC_Demo) |
+| **Repo** | [Axius-SDC/CordovaOS](https://github.com/Axius-SDC/CordovaOS) (the earlier planning repo, SDC_Demo, is archived) |
 | **License** | Apache 2.0 |
-| **Status** | Active (v1.0.0) |
+| **Status** | Active (4.4.4) |
 | **Features** | NIEM/NIH-CDE integration, W3C DPV role-based access, GraphDB + SPARQL, 10 government domains |
 
 Proof-of-concept showing SDC operating across government agency boundaries.
@@ -225,7 +225,7 @@ Planning and design documents for the SDC Agents ecosystem.
                |
           SDC_Agents_Demo
           SDCStudio_Examples
-          SDC_Demo (Cordova OS)
+          CordovaOS
 
     * SDCStudio is commercial (not in this guide)
       but its API is consumed by all agent suites
